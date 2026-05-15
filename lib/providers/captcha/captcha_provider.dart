@@ -43,7 +43,7 @@ class CaptchaProvider {
     if (_isInitialized || _disposed) return;
     _controller = CaptchaWebviewControllerFactory.getController();
     final initializedFuture = _controller!.onInitialized.first
-        .timeout(const Duration(seconds: 10), onTimeout: () => false);
+        .timeout(const Duration(seconds: 30), onTimeout: () => false);
 
     await _controller!.init();
     if (_disposed) return;
