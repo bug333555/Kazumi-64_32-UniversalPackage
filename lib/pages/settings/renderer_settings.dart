@@ -1,8 +1,10 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:kazumi/bean/appbar/sys_app_bar.dart';
 import 'package:kazumi/utils/storage.dart';
 import 'package:kazumi/utils/constants.dart';
+import 'package:kazumi/utils/utils.dart';
 import 'package:card_settings_ui/card_settings_ui.dart';
 
 class RendererSettings extends StatefulWidget {
@@ -17,6 +19,24 @@ class _RendererSettingsState extends State<RendererSettings> {
   late final ValueNotifier<String> renderer = ValueNotifier<String>(
     setting.get(SettingBoxKey.androidVideoRenderer, defaultValue: 'auto'),
   );
+  Map<String, String> _availableRenderers = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRenderers();
+  }
+
+  Future<void> _loadRenderers() async {
+    _availableRenderers = Map.from(androidVideoRenderersList);
+    if (Platform.isAndroid) {
+      final sdk = await Utils.getAndroidSdkVersion();
+      if (sdk <= 30) {
+        _availableRenderers.remove('gpu-next');
+      }
+    }
+    setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -31,7 +51,7 @@ class _RendererSettingsState extends State<RendererSettings> {
           SettingsSection(
             title: Text('选择合适的渲染器以获得最佳播放体验',
                 style: TextStyle(fontFamily: fontFamily)),
-            tiles: androidVideoRenderersList.entries
+            tiles: _availableRenderers.entries
                 .map((e) => SettingsTile<String>.radioTile(
                       title:
                           Text(e.key, style: TextStyle(fontFamily: fontFamily)),
