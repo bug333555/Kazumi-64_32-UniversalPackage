@@ -135,7 +135,7 @@ class _SourceSheetState extends State<SourceSheet>
       // detect the captcha disappearing and call onVerified.
       if (!verified) {
         _captchaVerifyTimer?.cancel();
-        _captchaVerifyTimer = Timer(const Duration(seconds: 20), () {
+        _captchaVerifyTimer = Timer(const Duration(seconds: 12), () {
           if (!verified) {
             KazumiDialog.dismiss();
           }

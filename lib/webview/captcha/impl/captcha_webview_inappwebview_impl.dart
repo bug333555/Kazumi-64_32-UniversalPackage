@@ -374,7 +374,11 @@ if (!_checkAndClick()) {
     inputEl.focus();
     var nativeInput = Object.getOwnPropertyDescriptor(
       window.HTMLInputElement.prototype, 'value');
-    nativeInput.set.call(inputEl, '$escapedCode');
+    if (nativeInput) {
+      nativeInput.set.call(inputEl, '$escapedCode');
+    } else {
+      inputEl.value = '$escapedCode';
+    }
     inputEl.dispatchEvent(new Event('input', { bubbles: true }));
     inputEl.dispatchEvent(new Event('change', { bubbles: true }));
     try { window.flutter_inappwebview.callHandler('CaptchaLogBridge', 'Input filled'); } catch(e) {}
