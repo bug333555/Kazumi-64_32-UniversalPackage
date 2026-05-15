@@ -82,7 +82,11 @@ class CaptchaWebviewInAppWebviewImpl
     webviewController?.addJavaScriptHandler(
       handlerName: 'CaptchaGoneBridge',
       callback: (args) {
-        logEventController.add('[Captcha WebView] GoneBridge fired (waiting for StatusBridge)');
+        logEventController.add('[Captcha WebView] Captcha image disappeared');
+        buttonWasClicked = false;
+        if (!captchaDisappearedController.isClosed) {
+          captchaDisappearedController.add(null);
+        }
       },
     );
 
@@ -370,11 +374,7 @@ if (!_checkAndClick()) {
     inputEl.focus();
     var nativeInput = Object.getOwnPropertyDescriptor(
       window.HTMLInputElement.prototype, 'value');
-    if (nativeInput) {
-      nativeInput.set.call(inputEl, '$escapedCode');
-    } else {
-      inputEl.value = '$escapedCode';
-    }
+    nativeInput.set.call(inputEl, '$escapedCode');
     inputEl.dispatchEvent(new Event('input', { bubbles: true }));
     inputEl.dispatchEvent(new Event('change', { bubbles: true }));
     try { window.flutter_inappwebview.callHandler('CaptchaLogBridge', 'Input filled'); } catch(e) {}
@@ -404,18 +404,17 @@ if (!_checkAndClick()) {
         return cookies.map((c) => '${c.name}=${c.value}').join('; ');
       }
     } catch (e) {
-      KazumiLogger().e('[Captcha WebView] CookieManager failed: $e');
+      KazumiLogger().e('[Captcha WebView] CookieManager error: $e');
     }
-    // Fallback for Huawei WebView: get cookies via JavaScript
     try {
       final result = await webviewController
           ?.evaluateJavascript(source: 'document.cookie');
       if (result != null && result.isNotEmpty) {
-        KazumiLogger().i('[Captcha WebView] Cookies from JS: $result');
+        KazumiLogger().i('[Captcha WebView] Cookies from JS fallback: $result');
         return result;
       }
     } catch (e) {
-      KazumiLogger().e('[Captcha WebView] JS cookie fallback failed: $e');
+      KazumiLogger().e('[Captcha WebView] JS cookie fallback error: $e');
     }
     return '';
   }
