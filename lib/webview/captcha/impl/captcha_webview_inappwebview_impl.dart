@@ -82,11 +82,7 @@ class CaptchaWebviewInAppWebviewImpl
     webviewController?.addJavaScriptHandler(
       handlerName: 'CaptchaGoneBridge',
       callback: (args) {
-        logEventController.add('[Captcha WebView] Captcha image disappeared');
-        buttonWasClicked = false;
-        if (!captchaDisappearedController.isClosed) {
-          captchaDisappearedController.add(null);
-        }
+        logEventController.add('[Captcha WebView] GoneBridge fired (waiting for StatusBridge)');
       },
     );
 
