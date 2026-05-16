@@ -38,27 +38,8 @@ class VideoWebviewAndroidImpl
         onLoadStart: (controller, url) async {
           logEventController.add('started loading: $url');
         },
-        onLoadStop: (controller, url) async {
+        onLoadStop: (controller, url) {
           logEventController.add('loading completed: $url');
-          await controller.evaluateJavascript(source: '''
-            (function(){
-              var iframes=document.querySelectorAll('iframe');
-              for(var i=0;i<iframes.length;i++){
-                var src=iframes[i].getAttribute('src');
-                if(src){try{window.flutter_inappwebview.callHandler('JSBridgeDebug',src);}catch(e){}}
-              }
-              var videos=document.querySelectorAll('video');
-              for(var j=0;j<videos.length;j++){
-                var v=videos[j].getAttribute('src');
-                if(v&&v.trim()!==''&&!v.startsWith('blob:')){try{window.flutter_inappwebview.callHandler('VideoBridgeDebug',v);}catch(e){}}
-                var ss=videos[j].getElementsByTagName('source');
-                for(var k=0;k<ss.length;k++){
-                  var s=ss[k].getAttribute('src');
-                  if(s&&s.trim()!==''&&!s.startsWith('blob:')){try{window.flutter_inappwebview.callHandler('VideoBridgeDebug',s);}catch(e){}}
-                }
-              }
-            })();
-          ''');
         },
       ),
     );
