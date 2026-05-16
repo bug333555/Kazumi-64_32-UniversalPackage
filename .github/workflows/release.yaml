@@ -37,20 +37,27 @@ jobs:
       - name: Build Flutter APK (fat, all ABIs)
         run: flutter build apk
 
-      - name: Download 1.9.4 APK for ARM64 libmpv
+      - name: Download 1.9.4 libmpv (arm64 + arm32 v1.1.5)
         run: |
           curl -skL -o old_194.apk \
             "https://github.com/Predidit/Kazumi/releases/download/1.9.4/Kazumi_android_1.9.4.apk"
           unzip -o old_194.apk "lib/arm64-v8a/libmpv.so" "lib/arm64-v8a/libmediakitandroidhelper.so" -d old_libs/
+          curl -skL -o arm32.jar \
+            "https://github.com/Predidit/libmpv-android-video-build/releases/download/v1.1.5/default-armeabi-v7a.jar"
+          unzip -o arm32.jar -d arm32_libs/
 
-      - name: Swap ARM64 libmpv with 1.9.4 in fat APK
+      - name: Swap both ABIs libmpv with 1.9.4 version
         run: |
           cp build/app/outputs/flutter-apk/app-release.apk Kazumi.apk
+          # Replace arm64 libs
           zip -d Kazumi.apk lib/arm64-v8a/libmpv.so
           zip -d Kazumi.apk lib/arm64-v8a/libmediakitandroidhelper.so
-          mkdir -p libswap/lib/arm64-v8a
+          mkdir -p libswap/lib/arm64-v8a libswap/lib/armeabi-v7a
           cp old_libs/lib/arm64-v8a/libmpv.so libswap/lib/arm64-v8a/
           cp old_libs/lib/arm64-v8a/libmediakitandroidhelper.so libswap/lib/arm64-v8a/
+          # Replace arm32 libs
+          cp arm32_libs/lib/armeabi-v7a/libmpv.so libswap/lib/armeabi-v7a/
+          cp arm32_libs/lib/armeabi-v7a/libmediakitandroidhelper.so libswap/lib/armeabi-v7a/
           cd libswap && zip -r ../Kazumi.apk lib/ && cd ..
 
       - name: Sign APK
