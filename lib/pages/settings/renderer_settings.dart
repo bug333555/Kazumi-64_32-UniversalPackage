@@ -29,12 +29,7 @@ class _RendererSettingsState extends State<RendererSettings> {
 
   Future<void> _loadRenderers() async {
     _availableRenderers = Map.from(androidVideoRenderersList);
-    if (Platform.isAndroid) {
-      final sdk = await Utils.getAndroidSdkVersion();
-      if (sdk <= 30) {
-        _availableRenderers.remove('gpu-next');
-      }
-    }
+    _availableRenderers.remove('gpu-next');
     setState(() {});
   }
 

@@ -233,20 +233,10 @@ abstract class _PlayerPlaybackController with Store {
       final String androidVideoRenderer =
           setting.get(SettingBoxKey.androidVideoRenderer, defaultValue: 'auto');
 
-      if (androidVideoRenderer == 'auto') {
-        final int androidSdkVersion = await Utils.getAndroidSdkVersion();
-        if (androidSdkVersion >= 34) {
-          videoRenderer = 'gpu-next';
-        } else {
-          videoRenderer = 'gpu';
-        }
-      } else if (androidVideoRenderer == 'gpu-next') {
-        final int androidSdkVersion = await Utils.getAndroidSdkVersion();
-        if (androidSdkVersion <= 30) {
-          videoRenderer = 'gpu';
-        } else {
-          videoRenderer = 'gpu-next';
-        }
+      // Universal package ships libmpv without Vulkan support.
+      // Force OpenGL (gpu) on all devices regardless of SDK version.
+      if (androidVideoRenderer == 'auto' || androidVideoRenderer == 'gpu-next') {
+        videoRenderer = 'gpu';
       } else {
         videoRenderer = androidVideoRenderer;
       }

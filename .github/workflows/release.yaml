@@ -78,8 +78,9 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.1.1-${{ github.sha }}
+          tag_name: v2.1.1-universal
           name: Kazumi 老手机32位适配优化版 v2.1.1
+          prerelease: true
           body: |
             ## 基于 [Predidit/Kazumi](https://github.com/Predidit/Kazumi) v2.1.1
 
