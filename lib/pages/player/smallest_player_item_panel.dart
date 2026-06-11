@@ -3,22 +3,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter_mobx/flutter_mobx.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:kazumi/utils/utils.dart';
-import 'package:kazumi/utils/pip_utils.dart';
+import 'package:kazumi/pages/player/player_adjustment_hud.dart';
+import 'package:kazumi/pages/player/player_panel_hold.dart';
+import 'package:kazumi/services/player/pip_utils.dart';
 import 'package:kazumi/pages/video/video_controller.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/pages/player/player_controller.dart';
 import 'package:flutter/services.dart';
-import 'package:kazumi/utils/remote.dart';
+import 'package:kazumi/services/player/remote.dart';
 import 'package:kazumi/pages/settings/danmaku/danmaku_settings_sheet.dart';
-import 'package:kazumi/bean/widget/collect_button.dart';
 import 'package:kazumi/utils/constants.dart';
-import 'package:hive_ce/hive.dart';
-import 'package:kazumi/utils/storage.dart';
+import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/bean/appbar/drag_to_move_bar.dart' as dtb;
 import 'package:audio_video_progress_bar/audio_video_progress_bar.dart';
 import 'package:kazumi/bean/widget/embedded_native_control_area.dart';
-import 'package:kazumi/utils/timed_shutdown_service.dart';
+import 'package:kazumi/services/player/timed_shutdown_service.dart';
+import 'package:kazumi/utils/device.dart';
+import 'package:kazumi/utils/format.dart';
 
 class SmallestPlayerItemPanel extends StatefulWidget {
   const SmallestPlayerItemPanel({
@@ -31,11 +32,9 @@ class SmallestPlayerItemPanel extends StatefulWidget {
     required this.handleProgressBarDragStart,
     required this.handleProgressBarDragEnd,
     required this.handleSuperResolutionChange,
-    required this.animationController,
+    required this.panelVisibilityController,
     required this.keyboardFocus,
-    required this.handleHove,
-    required this.startHideTimer,
-    required this.cancelHideTimer,
+    required this.acquirePlayerPanelHold,
     required this.handleDanmaku,
     required this.skipOP,
     required this.showVideoInfo,
@@ -55,11 +54,9 @@ class SmallestPlayerItemPanel extends StatefulWidget {
   final void Function(ThumbDragDetails details) handleProgressBarDragStart;
   final void Function() handleProgressBarDragEnd;
   final Future<void> Function(int shaderIndex) handleSuperResolutionChange;
-  final void Function() handleHove;
-  final AnimationController animationController;
+  final AnimationController panelVisibilityController;
   final FocusNode keyboardFocus;
-  final void Function() startHideTimer;
-  final void Function() cancelHideTimer;
+  final PlayerPanelHold Function() acquirePlayerPanelHold;
   final void Function() showVideoInfo;
   final void Function() showSyncPlayRoomCreateDialog;
   final void Function() showSyncPlayEndPointSwitchDialog;
@@ -72,7 +69,6 @@ class SmallestPlayerItemPanel extends StatefulWidget {
 }
 
 class _SmallestPlayerItemPanelState extends State<SmallestPlayerItemPanel> {
-  Box setting = GStorage.setting;
   late bool haEnable;
   late Animation<Offset> topOffsetAnimation;
   late Animation<Offset> bottomOffsetAnimation;
@@ -89,6 +85,12 @@ class _SmallestPlayerItemPanelState extends State<SmallestPlayerItemPanel> {
 
   static const double _danmakuIconSize = 24.0;
   static const double _loadingIndicatorStrokeWidth = 2.0;
+
+  @override
+  void dispose() {
+    textController.dispose();
+    super.dispose();
+  }
 
   void showForwardChange() {
     KazumiDialog.show(builder: (context) {
@@ -143,24 +145,24 @@ class _SmallestPlayerItemPanelState extends State<SmallestPlayerItemPanel> {
       begin: const Offset(0.0, -1.0),
       end: const Offset(0.0, 0.0),
     ).animate(CurvedAnimation(
-      parent: widget.animationController,
+      parent: widget.panelVisibilityController,
       curve: Curves.easeInOut,
     ));
     bottomOffsetAnimation = Tween<Offset>(
       begin: const Offset(0.0, 1.0),
       end: const Offset(0.0, 0.0),
     ).animate(CurvedAnimation(
-      parent: widget.animationController,
+      parent: widget.panelVisibilityController,
       curve: Curves.easeInOut,
     ));
     leftOffsetAnimation = Tween<Offset>(
       begin: const Offset(1.0, 0.0),
       end: const Offset(0.0, 0.0),
     ).animate(CurvedAnimation(
-      parent: widget.animationController,
+      parent: widget.panelVisibilityController,
       curve: Curves.easeInOut,
     ));
-    haEnable = setting.get(SettingBoxKey.hAenable, defaultValue: true);
+    haEnable = GStorage.getSetting(SettingsKeys.hAenable);
     cacheSvgIcons();
   }
 
@@ -333,121 +335,45 @@ class _SmallestPlayerItemPanelState extends State<SmallestPlayerItemPanel> {
           }),
         ),
         Positioned(
-            top: 25,
-            child: Observer(builder: (context) {
-              return playerController.panel.showSeekTime
-                  ? Wrap(
-                      alignment: WrapAlignment.center,
-                      children: <Widget>[
-                        Container(
-                          padding: const EdgeInsets.all(8.0),
-                          decoration: BoxDecoration(
-                            color: Colors.black54,
-                            borderRadius: BorderRadius.circular(8.0),
-                          ),
-                          child: Text(
-                            playerController.playback.currentPosition.compareTo(
-                                        playerController
-                                            .playback.playerPosition) >
-                                    0
-                                ? '快进 ${playerController.playback.currentPosition.inSeconds - playerController.playback.playerPosition.inSeconds} 秒'
-                                : '快退 ${playerController.playback.playerPosition.inSeconds - playerController.playback.currentPosition.inSeconds} 秒',
-                            style: const TextStyle(
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ],
-                    )
-                  : Container();
-            })),
+          top: 25,
+          child: Observer(builder: (context) {
+            return PlayerSeekHud(
+              visible: playerController.panel.showSeekTime,
+              currentPosition: playerController.playback.currentPosition,
+              playerPosition: playerController.playback.playerPosition,
+              duration: playerController.playback.duration,
+              direction: playerController.panel.seekDirection,
+              disableAnimations: widget.disableAnimations,
+            );
+          }),
+        ),
         Positioned(
-            top: 25,
-            child: Observer(builder: (context) {
-              return playerController.panel.showPlaySpeed
-                  ? Wrap(
-                      alignment: WrapAlignment.center,
-                      children: <Widget>[
-                        Container(
-                          padding: const EdgeInsets.all(8.0),
-                          decoration: BoxDecoration(
-                            color: Colors.black54,
-                            borderRadius: BorderRadius.circular(8.0),
-                          ),
-                          child: const Row(
-                            children: <Widget>[
-                              Icon(Icons.fast_forward, color: Colors.white),
-                              Text(
-                                ' 倍速播放',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    )
-                  : Container();
-            })),
+          top: 25,
+          child: Observer(builder: (context) {
+            return PlayerSpeedHud(
+              visible: playerController.panel.showPlaySpeed,
+              speed: playerController.playback.playerSpeed,
+              disableAnimations: widget.disableAnimations,
+            );
+          }),
+        ),
         Positioned(
-            top: 25,
-            child: Observer(builder: (context) {
-              return playerController.panel.showBrightness
-                  ? Wrap(
-                      alignment: WrapAlignment.center,
-                      children: <Widget>[
-                        Container(
-                            padding: const EdgeInsets.all(8.0),
-                            decoration: BoxDecoration(
-                              color: Colors.black54,
-                              borderRadius: BorderRadius.circular(8.0),
-                            ),
-                            child: Row(
-                              children: <Widget>[
-                                const Icon(Icons.brightness_7,
-                                    color: Colors.white),
-                                Text(
-                                  ' ${(playerController.panel.brightness * 100).toInt()} %',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ],
-                            )),
-                      ],
-                    )
-                  : Container();
-            })),
-        Positioned(
-            top: 25,
-            child: Observer(builder: (context) {
-              return playerController.panel.showVolume
-                  ? Wrap(
-                      alignment: WrapAlignment.center,
-                      children: <Widget>[
-                        Container(
-                            padding: const EdgeInsets.all(8.0),
-                            decoration: BoxDecoration(
-                              color: Colors.black54,
-                              borderRadius: BorderRadius.circular(8.0),
-                            ),
-                            child: Row(
-                              children: <Widget>[
-                                const Icon(Icons.volume_down,
-                                    color: Colors.white),
-                                Text(
-                                  ' ${playerController.playback.volume.toInt()}%',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ],
-                            )),
-                      ],
-                    )
-                  : Container();
-            })),
+          top: 25,
+          child: Observer(builder: (context) {
+            final showVolume = playerController.panel.showVolume;
+            final showBrightness = playerController.panel.showBrightness;
+            return PlayerAdjustmentHud(
+              visible: showVolume || showBrightness,
+              type: showVolume
+                  ? PlayerAdjustmentHudType.volume
+                  : PlayerAdjustmentHudType.brightness,
+              value: showVolume
+                  ? playerController.playback.volume
+                  : playerController.panel.brightness,
+              disableAnimations: widget.disableAnimations,
+            );
+          }),
+        ),
         Positioned(
           top: 0,
           left: 0,
@@ -524,7 +450,7 @@ class _SmallestPlayerItemPanelState extends State<SmallestPlayerItemPanel> {
             ),
           ),
           Text(
-            "    ${Utils.durationToString(playerController.playback.currentPosition)} / ${Utils.durationToString(playerController.playback.duration)}",
+            "    ${durationToString(playerController.playback.currentPosition)} / ${durationToString(playerController.playback.duration)}",
             style: const TextStyle(
               color: Colors.white,
               fontSize: 12.0,
@@ -569,10 +495,10 @@ class _SmallestPlayerItemPanelState extends State<SmallestPlayerItemPanel> {
             ),
             // 跳过
             forwardIcon(),
-            if (Utils.isDesktop() || Platform.isAndroid)
+            if (isDesktop() || Platform.isAndroid)
               IconButton(
                   onPressed: () async {
-                    if (Utils.isDesktop()) {
+                    if (isDesktop()) {
                       if (videoPageController.isPip) {
                         await PipUtils.exitDesktopPIPWindow();
                       } else {
@@ -611,29 +537,13 @@ class _SmallestPlayerItemPanelState extends State<SmallestPlayerItemPanel> {
             // 弹幕开关
             _buildDanmakuToggleButton(context),
             // 追番
-            CollectButton(
+            PlayerPanelHoldCollectButton(
+              acquirePlayerPanelHold: widget.acquirePlayerPanelHold,
               bangumiItem: videoPageController.bangumiItem,
-              onOpen: () {
-                widget.cancelHideTimer();
-                playerController.panel.canHidePlayerPanel = false;
-              },
-              onClose: () {
-                widget.cancelHideTimer();
-                widget.startHideTimer();
-                playerController.panel.canHidePlayerPanel = true;
-              },
             ),
-            MenuAnchor(
+            PlayerPanelHoldMenuAnchor(
+              acquirePlayerPanelHold: widget.acquirePlayerPanelHold,
               consumeOutsideTap: true,
-              onOpen: () {
-                widget.cancelHideTimer();
-                playerController.panel.canHidePlayerPanel = false;
-              },
-              onClose: () {
-                widget.cancelHideTimer();
-                widget.startHideTimer();
-                playerController.panel.canHidePlayerPanel = true;
-              },
               builder: (BuildContext context, MenuController controller,
                   Widget? child) {
                 return IconButton(
@@ -853,7 +763,7 @@ class _SmallestPlayerItemPanelState extends State<SmallestPlayerItemPanel> {
                       isScrollControlled: true,
                       constraints: BoxConstraints(
                           maxHeight: MediaQuery.of(context).size.height * 3 / 4,
-                          maxWidth: (Utils.isDesktop() || Utils.isTablet())
+                          maxWidth: (isDesktop() || isTablet())
                               ? MediaQuery.of(context).size.width * 9 / 16
                               : MediaQuery.of(context).size.width),
                       clipBehavior: Clip.antiAlias,
@@ -864,6 +774,8 @@ class _SmallestPlayerItemPanelState extends State<SmallestPlayerItemPanel> {
                               playerController.danmaku.canvasController,
                           onUpdateDanmakuSpeed:
                               playerController.updateDanmakuSpeed,
+                          onTimelineOffsetChanged: playerController
+                              .danmaku.clearAndInvalidateScheduledDanmakus,
                         );
                       },
                     );
@@ -896,9 +808,9 @@ class _SmallestPlayerItemPanelState extends State<SmallestPlayerItemPanel> {
                     playerController.pause();
                     RemotePlay()
                         .castVideo(playerController.videoUrl,
-                            videoPageController.currentPlugin.referer)
+                            httpHeaders: playerController.httpHeaders)
                         .whenComplete(() {
-                      if (needRestart) {
+                      if (mounted && needRestart) {
                         playerController.play();
                       }
                     });

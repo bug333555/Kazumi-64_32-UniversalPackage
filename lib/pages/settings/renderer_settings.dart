@@ -1,10 +1,7 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:hive_ce/hive.dart';
 import 'package:kazumi/bean/appbar/sys_app_bar.dart';
-import 'package:kazumi/utils/storage.dart';
+import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/utils/constants.dart';
-import 'package:kazumi/utils/utils.dart';
 import 'package:card_settings_ui/card_settings_ui.dart';
 
 class RendererSettings extends StatefulWidget {
@@ -15,9 +12,8 @@ class RendererSettings extends StatefulWidget {
 }
 
 class _RendererSettingsState extends State<RendererSettings> {
-  late final Box setting = GStorage.setting;
   late final ValueNotifier<String> renderer = ValueNotifier<String>(
-    setting.get(SettingBoxKey.androidVideoRenderer, defaultValue: 'auto'),
+    GStorage.getSetting<String>(SettingsKeys.androidVideoRenderer),
   );
   Map<String, String> _availableRenderers = {};
 
@@ -31,6 +27,12 @@ class _RendererSettingsState extends State<RendererSettings> {
     _availableRenderers = Map.from(androidVideoRenderersList);
     _availableRenderers.remove('gpu-next');
     setState(() {});
+  }
+
+  @override
+  void dispose() {
+    renderer.dispose();
+    super.dispose();
   }
 
   @override
@@ -56,8 +58,8 @@ class _RendererSettingsState extends State<RendererSettings> {
                       groupValue: renderer.value,
                       onChanged: (String? value) {
                         if (value != null) {
-                          setting.put(
-                              SettingBoxKey.androidVideoRenderer, value);
+                          GStorage.putSetting<String>(
+                              SettingsKeys.androidVideoRenderer, value);
                           setState(() {
                             renderer.value = value;
                           });

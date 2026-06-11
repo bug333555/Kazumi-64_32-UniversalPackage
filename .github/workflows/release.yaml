@@ -5,14 +5,32 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: oldphone-universal-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DANDANAPI_APPID: ${{ secrets.DANDANAPI_APPID }}
+  DANDANAPI_KEY: ${{ secrets.DANDANAPI_KEY }}
+
 jobs:
   build:
+    name: Build old-phone universal APK
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - name: Clone repository
         uses: actions/checkout@v4
+
+      - name: Resolve version
+        run: |
+          app_version="$(grep '^version:' pubspec.yaml | awk '{print $2}' | cut -d+ -f1)"
+          short_sha="$(git rev-parse --short HEAD)"
+          echo "APP_VERSION=$app_version" >> "$GITHUB_ENV"
+          echo "SHORT_SHA=$short_sha" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=v${app_version}-universal-dlna-test" >> "$GITHUB_ENV"
+        shell: bash
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -22,94 +40,98 @@ jobs:
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2.16.0
+        id: flutter-action
         with:
           channel: stable
-          flutter-version: 3.41.9
-
-      - name: Inject DanDanPlay API credentials
-        run: |
-          sed -i "s/kvpx7qkqjh/${{ secrets.DANDANAPI_APPID }}/g" lib/utils/mortis.dart
-          sed -i "s/rABUaBLqdz7aCSi3fe88ZDj2gwga9Vax/${{ secrets.DANDANAPI_KEY }}/g" lib/utils/mortis.dart
+          flutter-version-file: pubspec.yaml
 
       - name: Get Flutter dependencies
         run: flutter pub get
+        shell: bash
+
+      - name: Remove jni build id
+        run: sed -i -e 's/-Wl,/-Wl,--build-id=none,/' ${{ steps.flutter-action.outputs.PUB-CACHE-PATH }}/hosted/pub.dev/jni-*/src/CMakeLists.txt
+        shell: bash
+
+      - name: Run Flutter tests
+        run: flutter test
+        shell: bash
+
+      - name: Analyze Flutter project
+        run: flutter analyze --no-fatal-infos --fatal-warnings
+        shell: bash
 
       - name: Build Flutter APK (fat, all ABIs)
-        run: flutter build apk
+        run: >-
+          flutter build apk
+          --dart-define=DANDANAPI_APPID=$DANDANAPI_APPID
+          --dart-define=DANDANAPI_KEY=$DANDANAPI_KEY
+        shell: bash
 
-      - name: Download 1.9.4 libmpv (arm64 + arm32 v1.1.5)
+      - name: Download compatibility libmpv
         run: |
-          curl -skL -o old_194.apk \
+          curl -fL -o old_194.apk \
             "https://github.com/Predidit/Kazumi/releases/download/1.9.4/Kazumi_android_1.9.4.apk"
           unzip -o old_194.apk "lib/arm64-v8a/libmpv.so" "lib/arm64-v8a/libmediakitandroidhelper.so" -d old_libs/
-          curl -skL -o arm32.jar \
+
+          curl -fL -o arm32.jar \
             "https://github.com/Predidit/libmpv-android-video-build/releases/download/v1.1.5/default-armeabi-v7a.jar"
           unzip -o arm32.jar -d arm32_libs/
+        shell: bash
 
-      - name: Swap both ABIs libmpv with 1.9.4 version
+      - name: Swap both ABIs to compatibility libmpv
         run: |
           cp build/app/outputs/flutter-apk/app-release.apk Kazumi.apk
-          # Replace arm64 libs
-          zip -d Kazumi.apk lib/arm64-v8a/libmpv.so
-          zip -d Kazumi.apk lib/arm64-v8a/libmediakitandroidhelper.so
+
+          zip -d Kazumi.apk lib/arm64-v8a/libmpv.so || true
+          zip -d Kazumi.apk lib/arm64-v8a/libmediakitandroidhelper.so || true
+          zip -d Kazumi.apk lib/armeabi-v7a/libmpv.so || true
+          zip -d Kazumi.apk lib/armeabi-v7a/libmediakitandroidhelper.so || true
+
           mkdir -p libswap/lib/arm64-v8a libswap/lib/armeabi-v7a
           cp old_libs/lib/arm64-v8a/libmpv.so libswap/lib/arm64-v8a/
           cp old_libs/lib/arm64-v8a/libmediakitandroidhelper.so libswap/lib/arm64-v8a/
-          # Replace arm32 libs
           cp arm32_libs/lib/armeabi-v7a/libmpv.so libswap/lib/armeabi-v7a/
           cp arm32_libs/lib/armeabi-v7a/libmediakitandroidhelper.so libswap/lib/armeabi-v7a/
-          cd libswap && zip -r ../Kazumi.apk lib/ && cd ..
+
+          cd libswap
+          zip -r ../Kazumi.apk lib/
+          cd ..
+        shell: bash
 
       - name: Sign APK
         run: |
-          keytool -genkey -v -keystore debug.keystore -alias debug \
-            -keyalg RSA -keysize 2048 -validity 365 \
-            -storepass android -keypass android \
-            -dname "CN=Debug" -noprompt
-          APKSIGNER=$(find $ANDROID_HOME/build-tools -name apksigner | head -1)
-          $APKSIGNER sign --ks debug.keystore --ks-pass pass:android --key-pass pass:android Kazumi.apk
+          echo "$KAZUMI_KEYSTORE_BASE64" | base64 -d > kazumi-release.jks
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -1)
+          "$APKSIGNER" sign \
+            --ks kazumi-release.jks \
+            --ks-pass "pass:$KAZUMI_KEYSTORE_PASSWORD" \
+            --ks-key-alias "$KAZUMI_KEY_ALIAS" \
+            --key-pass "pass:$KAZUMI_KEY_PASSWORD" \
+            Kazumi.apk
+        shell: bash
+        env:
+          KAZUMI_KEYSTORE_BASE64: ${{ secrets.KAZUMI_KEYSTORE_BASE64 }}
+          KAZUMI_KEYSTORE_PASSWORD: ${{ secrets.KAZUMI_KEYSTORE_PASSWORD }}
+          KAZUMI_KEY_ALIAS: ${{ secrets.KAZUMI_KEY_ALIAS }}
+          KAZUMI_KEY_PASSWORD: ${{ secrets.KAZUMI_KEY_PASSWORD }}
+
+      - name: Inspect APK native libraries
+        run: |
+          unzip -l Kazumi.apk | grep -E 'lib/(arm64-v8a|armeabi-v7a)/(libmpv|libmediakitandroidhelper)\.so'
+        shell: bash
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Kazumi
+          name: Kazumi-oldphone-universal
           path: Kazumi.apk
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v2.1.1-universal
-          name: Kazumi 老手机32位适配优化版 v2.1.1
-          prerelease: true
-          body: |
-            ## 基于 [Predidit/Kazumi](https://github.com/Predidit/Kazumi) v2.1.1
-
-            ### 新增支持
-            - 32位 ARM + 64位 ARM 双ABI通用包，自动匹配设备
-            - Android 8.1 (SDK 27) 及以上老系统兼容
-            - 骁龙450 / MT6765 等老SOC实测通过
-            - 解锁特摄剧标签搜索（假面骑士、奥特曼等）
-            - 修复华为WebView设备部分视频源解析失败
-
-            ### 修改内容
-            - 32位 + 64位双ABI同包
-            - Android 11 及以下设备隐藏Vulkan选项，自动回退OpenGL
-            - arm64 注入兼容版 libmpv，修复由于过老的SOC不适配的兼容性问题而导致的白屏
-            - 视频WebView页面加载后主动扫描已有iframe/video元素
-            - 搜索支持特摄剧（假面骑士、奥特曼等）
-
-            ### 运行要求
-            - 推荐 Android 8.1 (SDK 27) 及以上
-            - 2GB+ 运行内存
-
-            ### 更新说明
-            适配版不定时更新，跟随 Kazumi 上游主版本
-
-            ### 问题反馈
-            附上：设备型号 / Android版本及Kazumi内报错信息 / SOC型号 / 问题描述
-
-            ### 鸣谢
-            原项目 [Predidit/Kazumi](https://github.com/Predidit/Kazumi) · 弹幕服务 DanDanPlay API
-          files: Kazumi.apk
+      - name: Update existing test release APK
+        run: |
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
+          gh release upload "$RELEASE_TAG" Kazumi.apk \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
