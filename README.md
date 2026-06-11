@@ -1,11 +1,3 @@
-# Kazumi 老手机32位适配优化版 v2.1.1
-
-> 32位 + 64位双ABI · Android 8.1+ 兼容 · 老SOC白屏修复 · 特摄搜索解锁
-
-基于 [Predidit/Kazumi](https://github.com/Predidit/Kazumi) v2.1.1
-
----
-
 ## 新增支持
 - 32位 ARM (armeabi-v7a) Android 设备
 - Android 8.1 (SDK 27) 及以上老系统兼容
