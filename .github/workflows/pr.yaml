@@ -65,7 +65,7 @@
           contents: read
         steps:
           - name: Clone repository
-            uses: actions/checkout@v4
+            uses: actions/checkout@v6
           - name: Set up Flutter
             uses: subosito/flutter-action@v2.16.0
             with:
@@ -85,7 +85,7 @@
           contents: read
         steps:
           - name: Clone repository
-            uses: actions/checkout@v4
+            uses: actions/checkout@v6
           - name: Set up Flutter
             uses: subosito/flutter-action@v2.16.0
             with:
@@ -107,14 +107,14 @@
         permissions: write-all
         steps:
           - name: Clone repository
-            uses: actions/checkout@v4
+            uses: actions/checkout@v6
           - name: Install dependencies
             run: |
               sudo apt-get update
               sudo apt-get install -y clang cmake libgtk-3-dev ninja-build libayatana-appindicator3-dev libasound2-dev
             shell: bash
           - name: Set up JDK 17
-            uses: actions/setup-java@v4
+            uses: actions/setup-java@v5
             with:
               java-version: '17'
               distribution: 'temurin'          
@@ -145,7 +145,7 @@
             shell: bash
 
           - name: Upload android outputs
-            uses: actions/upload-artifact@v4
+            uses: actions/upload-artifact@v7
             with:
               name: android_outputs
               path: Kazumi_android_*.apk
@@ -159,7 +159,7 @@
     
         steps:
           - name: Clone repository
-            uses: actions/checkout@v4
+            uses: actions/checkout@v6
           - run: choco install yq
           - name: Enable Git longpaths
             run: git config --system core.longpaths true
@@ -169,7 +169,7 @@
               channel: stable
               flutter-version-file: pubspec.yaml
           - name: Set up Java
-            uses: actions/setup-java@v4
+            uses: actions/setup-java@v5
             with:
               distribution: 'temurin'
               java-version: '18'
@@ -183,7 +183,7 @@
           - run: Compress-Archive build/windows/x64/runner/Release/* Kazumi_windows_canary.zip
           - name: Upload windows outputs
             id: unsigned-windows-packet-artifacts
-            uses: actions/upload-artifact@v4
+            uses: actions/upload-artifact@v7
             with:
               name: windows_outputs
               path: |
@@ -191,7 +191,7 @@
           # - name: Build unsigned msix
           #   run: dart run msix:create
           # - name: Upload windows msix ouputs
-          #   uses: actions/upload-artifact@v4
+          #   uses: actions/upload-artifact@v7
           #   id: unsigned-windows-msix-artifacts
           #   with:
           #     name: windows_msix_outputs
@@ -214,7 +214,7 @@
           
           # - name: Upload windows msix signed ouputs
           #   if: ${{ github.event.inputs.signpath_sign == 'true'}}
-          #   uses: actions/upload-artifact@v4
+          #   uses: actions/upload-artifact@v7
           #   id: signed-windows-msix-artifacts
           #   with:
           #     name: windows_msix_signed_outputs
@@ -230,7 +230,7 @@
 
         steps:
           - name: Clone repository
-            uses: actions/checkout@v4
+            uses: actions/checkout@v6
           - name: Set up Flutter
             uses: subosito/flutter-action@v2.16.0
             with:
@@ -251,7 +251,7 @@
               find Payload/Runner.app/Frameworks -type d -name "*.framework" -exec codesign --force --sign - --preserve-metadata=identifier,entitlements {} \;
               zip -q -r Kazumi_ios_canary_no_sign.ipa Payload
           - name: Upload iOS build
-            uses: actions/upload-artifact@v4
+            uses: actions/upload-artifact@v7
             with:
               name: ios_outputs
               path: Kazumi_ios_*.ipa
@@ -265,7 +265,7 @@
 
         steps:
           - name: Clone repository
-            uses: actions/checkout@v4
+            uses: actions/checkout@v6
           - name: Set up Flutter
             uses: subosito/flutter-action@v2.16.0
             with:
@@ -286,7 +286,7 @@
           - name: Rename DMG
             run: mv Kazumi*.dmg Kazumi_macos_canary.dmg
           - name: Upload MacOS build
-            uses: actions/upload-artifact@v4
+            uses: actions/upload-artifact@v7
             with:
               name: macos_outputs
               path: Kazumi_macos_*.dmg
@@ -299,7 +299,7 @@
         permissions: write-all
         steps:
           - name: Clone repository
-            uses: actions/checkout@v4
+            uses: actions/checkout@v6
           - name: Install dependencies
             run: |
               sudo apt-get update
@@ -383,7 +383,7 @@
             shell: bash
 
           - name: Upload linux outputs
-            uses: actions/upload-artifact@v4
+            uses: actions/upload-artifact@v7
             with:
               name: linux_outputs
               path: |
