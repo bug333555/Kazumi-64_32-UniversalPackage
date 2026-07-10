@@ -6,6 +6,7 @@ import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/network/proxy_utils.dart';
 import 'package:kazumi/services/network/system_proxy_service.dart';
 import 'package:kazumi/services/storage/storage.dart';
+import 'package:kazumi/utils/bangumi_mirror_credentials.dart';
 
 class ProxyAwareImageCacheManager extends CacheManager with ImageCacheManager {
   static final ProxyAwareImageCacheManager instance =
@@ -59,7 +60,8 @@ class ProxyAwareImageFileService extends FileService {
   }
 
   bool _bangumiMirrorEnabled() {
-    return GStorage.getSetting(SettingsKeys.enableBangumiProxy);
+    return GStorage.getSetting(SettingsKeys.enableBangumiProxy) &&
+        hasBangumiMirrorCredentials;
   }
 
   HttpClient _createHttpClient() {

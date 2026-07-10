@@ -4,6 +4,7 @@ import 'package:kazumi/request/core/dio_logger_interceptor.dart';
 import 'package:kazumi/request/core/network_config.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/storage/storage.dart';
+import 'package:kazumi/utils/bangumi_mirror_credentials.dart';
 import 'package:kazumi/utils/http_headers.dart';
 
 class DioFactory {
@@ -98,7 +99,7 @@ class _BangumiMirrorInterceptor extends Interceptor {
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
     final enableBangumiProxy =
         GStorage.getSetting(SettingsKeys.enableBangumiProxy);
-    if (!enableBangumiProxy) {
+    if (!enableBangumiProxy || !hasBangumiMirrorCredentials) {
       handler.next(options);
       return;
     }

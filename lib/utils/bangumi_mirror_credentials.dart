@@ -4,3 +4,7 @@ const Map<String, String> bangumiMirrorCredentials = {
   'id': String.fromEnvironment('KAZUMI_APPID'),
   'value': String.fromEnvironment('KAZUMI_KEY'),
 };
+
+bool get hasBangumiMirrorCredentials =>
+    bangumiMirrorCredentials['id']!.isNotEmpty &&
+    bangumiMirrorCredentials['value']!.isNotEmpty;

@@ -1086,18 +1086,18 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
                     ),
                   ),
                   MenuItemButton(
-                    onPressed: () {
-                      bool needRestart = playerController.playback.playing;
-                      playerController.pause();
-                      RemotePlay()
-                          .castVideo(playerController.videoUrl,
-                              videoPageController.currentPlugin.referer)
-                          .whenComplete(() {
-                        if (mounted && needRestart) {
+                      onPressed: () async {
+                        bool needRestart = playerController.playback.playing;
+                        playerController.pause();
+                        final accepted = await RemotePlay().castVideo(
+                          playerController.videoUrl,
+                          httpHeaders: playerController.httpHeaders,
+                          title: playerController.castTitle,
+                        );
+                        if (mounted && needRestart && !accepted) {
                           playerController.play();
                         }
-                      });
-                    },
+                      },
                     child: Container(
                       height: 48,
                       constraints: BoxConstraints(minWidth: 112),

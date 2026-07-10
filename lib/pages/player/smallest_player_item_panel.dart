@@ -766,17 +766,17 @@ class _SmallestPlayerItemPanelState extends State<SmallestPlayerItemPanel> {
                 ),
               ),
               MenuItemButton(
-                onPressed: () {
+                onPressed: () async {
                   bool needRestart = playerController.playback.playing;
                   playerController.pause();
-                  RemotePlay()
-                      .castVideo(playerController.videoUrl,
-                          videoPageController.currentPlugin.referer)
-                      .whenComplete(() {
-                    if (mounted && needRestart) {
-                      playerController.play();
-                    }
-                  });
+                  final accepted = await RemotePlay().castVideo(
+                    playerController.videoUrl,
+                    httpHeaders: playerController.httpHeaders,
+                    title: playerController.castTitle,
+                  );
+                  if (mounted && needRestart && !accepted) {
+                    playerController.play();
+                  }
                 },
                 child: Container(
                   height: 48,

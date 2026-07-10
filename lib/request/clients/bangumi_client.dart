@@ -100,7 +100,7 @@ class BangumiClient {
     }
     final enableBangumiProxy =
         GStorage.getSetting(SettingsKeys.enableBangumiProxy);
-    if (!enableBangumiProxy) {
+    if (!enableBangumiProxy || !hasBangumiMirrorCredentials) {
       return false;
     }
     final path = Uri.parse(url).path;

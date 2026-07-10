@@ -468,11 +468,24 @@ if (!_checkAndClick()) {
         PlatformCookieManagerCreationParams(),
       );
       final cookies = await cookieManager.getCookies(url: WebUri(pageUrl));
-      return cookies.map((c) => '${c.name}=${c.value}').join('; ');
+      if (cookies.isNotEmpty) {
+        return cookies.map((c) => '${c.name}=${c.value}').join('; ');
+      }
     } catch (e) {
-      KazumiLogger().e('[Captcha WebView] getCookieString error: $e');
-      return '';
+      KazumiLogger().e('[Captcha WebView] CookieManager error: $e');
     }
+    try {
+      final result = await webviewController?.evaluateJavascript(
+        source: 'document.cookie',
+      );
+      if (result != null && result.isNotEmpty) {
+        KazumiLogger().i('[Captcha WebView] Cookies from JS fallback');
+        return result;
+      }
+    } catch (e) {
+      KazumiLogger().e('[Captcha WebView] JS cookie fallback error: $e');
+    }
+    return '';
   }
 
   @override

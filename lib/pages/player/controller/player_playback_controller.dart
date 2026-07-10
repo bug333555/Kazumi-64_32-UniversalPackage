@@ -19,7 +19,6 @@ import 'package:media_kit_video/media_kit_video.dart';
 import 'package:mobx/mobx.dart';
 import 'package:kazumi/utils/device.dart';
 import 'package:kazumi/utils/media.dart';
-import 'package:kazumi/services/platform/platform_environment_service.dart';
 
 part 'player_playback_controller.g.dart';
 
@@ -333,20 +332,11 @@ abstract class _PlayerPlaybackController with Store {
         final String androidVideoRenderer =
             GStorage.getSetting(SettingsKeys.androidVideoRenderer);
 
-        if (androidVideoRenderer == 'auto') {
-          // Android 14 及以上使用基于 Vulkan 的 MPV GPU-NEXT 视频输出，着色器性能更好
-          // GPU-NEXT 需要 Vulkan 1.2 支持
-          // 避免 Android 13 及以下设备上部分机型 Vulkan 支持不佳导致的黑屏问题
-          final int androidSdkVersion =
-              await PlatformEnvironmentService.getAndroidSdkVersion();
-          if (!isCurrentPlayer(player)) {
-            return await _discardIfNotCurrent(candidate);
-          }
-          if (androidSdkVersion >= 34) {
-            videoRenderer = 'gpu-next';
-          } else {
-            videoRenderer = 'gpu';
-          }
+        // The universal package uses compatibility libmpv builds without a
+        // reliable Vulkan path. Keep stored gpu-next values from re-enabling it.
+        if (androidVideoRenderer == 'auto' ||
+            androidVideoRenderer == 'gpu-next') {
+          videoRenderer = 'gpu';
         } else {
           videoRenderer = androidVideoRenderer;
         }

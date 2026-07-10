@@ -12,8 +12,15 @@ class RendererSettings extends StatefulWidget {
 }
 
 class _RendererSettingsState extends State<RendererSettings> {
+  static final Map<String, String> _compatibleRenderers =
+      Map<String, String>.fromEntries(
+    androidVideoRenderersList.entries.where((entry) => entry.key != 'gpu-next'),
+  );
+
   late final ValueNotifier<String> renderer = ValueNotifier<String>(
-    GStorage.getSetting<String>(SettingsKeys.androidVideoRenderer),
+    GStorage.getSetting<String>(SettingsKeys.androidVideoRenderer) == 'gpu-next'
+        ? 'gpu'
+        : GStorage.getSetting<String>(SettingsKeys.androidVideoRenderer),
   );
 
   @override
@@ -35,7 +42,7 @@ class _RendererSettingsState extends State<RendererSettings> {
           SettingsSection(
             title: Text('选择合适的渲染器以获得最佳播放体验',
                 style: TextStyle(fontFamily: fontFamily)),
-            tiles: androidVideoRenderersList.entries
+            tiles: _compatibleRenderers.entries
                 .map((e) => SettingsTile<String>.radioTile(
                       title:
                           Text(e.key, style: TextStyle(fontFamily: fontFamily)),

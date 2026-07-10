@@ -79,6 +79,8 @@ class PlayerController implements Disposable {
   late int currentDanmakuEpisodeNumber;
   late int currentRoad;
   late String referer;
+  Map<String, String> httpHeaders = const <String, String>{};
+  String castTitle = 'Kazumi';
   String? coverUrl;
   String videoUrl = '';
   bool isLocalPlayback = false;
@@ -173,6 +175,14 @@ class PlayerController implements Disposable {
     currentDanmakuEpisodeNumber = params.danmakuEpisodeNumber;
     currentRoad = params.currentRoad;
     referer = params.referer;
+    httpHeaders = Map<String, String>.unmodifiable(params.httpHeaders);
+    castTitle = [params.bangumiName, params.episodeTitle]
+        .whereType<String>()
+        .where((value) => value.trim().isNotEmpty)
+        .join(' - ');
+    if (castTitle.isEmpty) {
+      castTitle = 'Kazumi';
+    }
 
     KazumiLogger().i(
         'PlayerController: ${params.isLocalPlayback ? "local" : "online"} playback, url: ${params.videoUrl}');

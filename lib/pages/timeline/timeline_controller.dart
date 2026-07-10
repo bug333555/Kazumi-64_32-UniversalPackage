@@ -4,6 +4,7 @@ import 'package:kazumi/utils/anime_season.dart';
 import 'package:kazumi/repositories/collect_repository.dart';
 import 'package:kazumi/modules/collect/collect_type.dart';
 import 'package:kazumi/services/storage/storage.dart';
+import 'package:kazumi/utils/bangumi_mirror_credentials.dart';
 import 'package:mobx/mobx.dart';
 
 part 'timeline_controller.g.dart';
@@ -47,7 +48,8 @@ abstract class _TimelineController with Store {
   DateTime get selectedDate => _selectedDate;
 
   bool get _bangumiMirrorEnabled =>
-      GStorage.getSetting(SettingsKeys.enableBangumiProxy);
+      GStorage.getSetting(SettingsKeys.enableBangumiProxy) &&
+      hasBangumiMirrorCredentials;
 
   void init() {
     _selectedDate = DateTime.now();

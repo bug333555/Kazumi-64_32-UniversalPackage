@@ -10,7 +10,7 @@ void main() {
 
       expect(params['keyword'], 'frieren');
       expect(params['sort'], 'heat');
-      expect(filter['type'], [2]);
+      expect(filter['type'], [2, 6]);
       expect(filter['tag'], isEmpty);
       expect(filter['rank'], [">=0", "<=99999"]);
       expect(filter['nsfw'], isFalse);

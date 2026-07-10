@@ -15,6 +15,21 @@
   <p>使用 Flutter 开发的基于自定义规则的番剧采集与在线观看程序。使用最多五行基于 <code>Xpath</code> 语法的选择器构建自己的规则。支持规则导入与规则分享。支持基于 <code>Anime4K</code> 的实时超分辨率。绝赞开发中 (～￣▽￣)～</p>
 </div>
 
+## 老设备通用兼容版
+
+本仓库发布基于上游 Kazumi 2.2.0 的 Android 通用兼容包，保留
+`armeabi-v7a` 与 `arm64-v8a`，并使用 Kazumi 1.9.4 系列播放器原生库。
+
+- Android 7.0/API 24 及以上。
+- 强制使用 MPV `gpu`/OpenGL 渲染路径，禁用 `gpu-next`/Vulkan。
+- 保留轻量播放器 HUD、旧 WebView Cookie 回退和低端设备兼容设置。
+- DLNA 按直连、规范元数据、带请求头代理的顺序进行兼容投屏。
+- APK 由 GitHub Actions 注入弹弹Play API 配置并使用固定证书签名。
+
+兼容包继续发布在现有的
+[通用预览版 Release](https://github.com/bug333555/Kazumi-64_32-UniversalPackage/releases/tag/v2.1.4-universal-dlna-test)，
+不使用上游仅 ARM64 的 Android APK。
+
 
 
 ## 支持平台
@@ -210,5 +225,4 @@ A: 本项目编译需要良好的网络环境, 除了由 Google 托管的 Flutte
 感谢 [avbuild](https://github.com/wang-bin/avbuild) 本项目使用了来自 avbuild 的树外补丁实现非标准视频流播放。
 
 感谢 [hive](https://github.com/isar/hive) 本项目持久化储存能力来自 hive。
-
 

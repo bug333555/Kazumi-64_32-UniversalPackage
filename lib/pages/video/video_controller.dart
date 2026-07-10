@@ -26,6 +26,7 @@ import 'package:kazumi/utils/http_headers.dart';
 import 'package:kazumi/utils/media.dart';
 import 'package:kazumi/utils/async_session.dart';
 import 'package:kazumi/services/platform/display_mode_service.dart';
+import 'package:kazumi/services/plugin/plugin_cookie_manager.dart';
 
 part 'video_controller.g.dart';
 
@@ -620,6 +621,29 @@ abstract class _VideoPageController with Store implements Disposable {
       final bool forceAdBlocker =
           GStorage.getSetting(SettingsKeys.forceAdBlocker);
 
+      final httpHeaders = <String, String>{
+        'user-agent': currentPlugin.userAgent.isEmpty
+            ? getRandomUA()
+            : currentPlugin.userAgent,
+        if (currentPlugin.referer.isNotEmpty)
+          'referer': currentPlugin.referer,
+      };
+      final sourceUri = Uri.tryParse(source.url);
+      if (sourceUri != null && sourceUri.hasScheme) {
+        final cookies = await PluginCookieManager.instance.loadForRequest(
+          currentPlugin.name,
+          sourceUri,
+        );
+        if (cookies.isNotEmpty) {
+          httpHeaders['cookie'] = cookies
+              .map((cookie) => '${cookie.name}=${cookie.value}')
+              .join('; ');
+        }
+      }
+      if (session.isStale) {
+        return;
+      }
+
       final params = PlaybackInitParams(
         videoUrl: source.url,
         offset: source.offset,
@@ -630,13 +654,7 @@ abstract class _VideoPageController with Store implements Disposable {
         danmakuEpisodeNumber: resolvedEpisode.danmakuEpisodeNumber,
         pageUrl: resolvedEpisode.pageUrl,
         sortNumber: resolvedEpisode.sortNumber,
-        httpHeaders: {
-          'user-agent': currentPlugin.userAgent.isEmpty
-              ? getRandomUA()
-              : currentPlugin.userAgent,
-          if (currentPlugin.referer.isNotEmpty)
-            'referer': currentPlugin.referer,
-        },
+        httpHeaders: httpHeaders,
         adBlockerEnabled: forceAdBlocker || currentPlugin.adBlocker,
         episodeTitle: resolvedEpisode.displayTitle,
         referer: currentPlugin.referer,
