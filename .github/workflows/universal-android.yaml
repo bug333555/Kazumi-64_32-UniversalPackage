@@ -1,0 +1,163 @@
+name: Build + Release (2.3.3 universal old-device APK)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: oldphone-universal-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DANDANAPI_APPID: ${{ secrets.DANDANAPI_APPID }}
+  DANDANAPI_KEY: ${{ secrets.DANDANAPI_KEY }}
+
+jobs:
+  build:
+    name: Build old-phone universal APK
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v6
+
+      - name: Resolve version
+        run: |
+          app_version="$(grep '^version:' pubspec.yaml | awk '{print $2}' | cut -d+ -f1)"
+          short_sha="$(git rev-parse --short HEAD)"
+          echo "APP_VERSION=$app_version" >> "$GITHUB_ENV"
+          echo "SHORT_SHA=$short_sha" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=v2.1.4-universal-dlna-test" >> "$GITHUB_ENV"
+        shell: bash
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2.16.0
+        id: flutter-action
+        with:
+          channel: stable
+          flutter-version-file: pubspec.yaml
+
+      - name: Get Flutter dependencies
+        run: flutter pub get
+        shell: bash
+
+      - name: Validate required build secrets
+        run: |
+          test -n "$DANDANAPI_APPID"
+          test -n "$DANDANAPI_KEY"
+        shell: bash
+
+      - name: Remove jni build id
+        run: sed -i -e 's/-Wl,/-Wl,--build-id=none,/' ${{ steps.flutter-action.outputs.PUB-CACHE-PATH }}/hosted/pub.dev/jni-*/src/CMakeLists.txt
+        shell: bash
+
+      - name: Run Flutter tests
+        run: flutter test
+        shell: bash
+
+      - name: Analyze Flutter project
+        run: flutter analyze --no-fatal-infos --fatal-warnings
+        shell: bash
+
+      - name: Build Flutter APK (fat, all ABIs)
+        run: >-
+          flutter build apk
+          --dart-define=DANDANAPI_APPID=$DANDANAPI_APPID
+          --dart-define=DANDANAPI_KEY=$DANDANAPI_KEY
+        shell: bash
+
+      - name: Download compatibility libmpv
+        run: |
+          curl -fL -o old_194.apk \
+            "https://github.com/Predidit/Kazumi/releases/download/1.9.4/Kazumi_android_1.9.4.apk"
+
+          curl -fL -o arm32.jar \
+            "https://github.com/Predidit/libmpv-android-video-build/releases/download/v1.1.5/default-armeabi-v7a.jar"
+          echo "5106c5d56cdc8d4ae6a186e86551b215a89605d1eb95a36730487269ec2a01c3  old_194.apk" | sha256sum -c -
+          echo "4f2545c8678c264f10520d5581ba619278c3df04c9ef3b3316e00f85436418fc  arm32.jar" | sha256sum -c -
+          unzip -o old_194.apk "lib/arm64-v8a/libmpv.so" "lib/arm64-v8a/libmediakitandroidhelper.so" -d old_libs/
+          unzip -o arm32.jar -d arm32_libs/
+        shell: bash
+
+      - name: Swap both ABIs to compatibility libmpv
+        run: |
+          cp build/app/outputs/flutter-apk/app-release.apk Kazumi.apk
+
+          zip -d Kazumi.apk lib/arm64-v8a/libmpv.so || true
+          zip -d Kazumi.apk lib/arm64-v8a/libmediakitandroidhelper.so || true
+          zip -d Kazumi.apk lib/armeabi-v7a/libmpv.so || true
+          zip -d Kazumi.apk lib/armeabi-v7a/libmediakitandroidhelper.so || true
+
+          mkdir -p libswap/lib/arm64-v8a libswap/lib/armeabi-v7a
+          cp old_libs/lib/arm64-v8a/libmpv.so libswap/lib/arm64-v8a/
+          cp old_libs/lib/arm64-v8a/libmediakitandroidhelper.so libswap/lib/arm64-v8a/
+          cp arm32_libs/lib/armeabi-v7a/libmpv.so libswap/lib/armeabi-v7a/
+          cp arm32_libs/lib/armeabi-v7a/libmediakitandroidhelper.so libswap/lib/armeabi-v7a/
+
+          cd libswap
+          zip -r ../Kazumi.apk lib/
+          cd ..
+
+          test "$(unzip -p Kazumi.apk lib/arm64-v8a/libmpv.so | sha256sum | awk '{print $1}')" = "6510999cdc493fb03bfd69669365c773d47183ae5af07ff10a5ea83bf5dce3c8"
+          test "$(unzip -p Kazumi.apk lib/arm64-v8a/libmediakitandroidhelper.so | sha256sum | awk '{print $1}')" = "a6862031015e390aa8a64536411132cf4df6a5a9dcf782f0d68b995380a1cccb"
+          test "$(unzip -p Kazumi.apk lib/armeabi-v7a/libmpv.so | sha256sum | awk '{print $1}')" = "baca22ea187daec88728c57f696e2c5c6c8273c74c9562d281f27b8491e98bb5"
+          test "$(unzip -p Kazumi.apk lib/armeabi-v7a/libmediakitandroidhelper.so | sha256sum | awk '{print $1}')" = "698ce761945a3bdaf6ffe690e715fc510bc30a3571c5ac6768a734847232d5cc"
+
+          ZIPALIGN=$(find "$ANDROID_HOME/build-tools" -name zipalign | sort -V | tail -1)
+          "$ZIPALIGN" -f -p 4 Kazumi.apk Kazumi-aligned.apk
+          mv Kazumi-aligned.apk Kazumi.apk
+        shell: bash
+
+      - name: Sign APK
+        run: |
+          echo "$KAZUMI_KEYSTORE_BASE64" | base64 -d > kazumi-release.jks
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -1)
+          "$APKSIGNER" sign \
+            --ks kazumi-release.jks \
+            --ks-pass "pass:$KAZUMI_KEYSTORE_PASSWORD" \
+            --ks-key-alias "$KAZUMI_KEY_ALIAS" \
+            --key-pass "pass:$KAZUMI_KEY_PASSWORD" \
+            Kazumi.apk
+
+          "$APKSIGNER" verify --verbose --print-certs Kazumi.apk | tee apk-signature.txt
+          grep -qi "fece83f953fbe954298fee2201b63962266c377dbfa305a83058a48a9a255ad7" apk-signature.txt
+        shell: bash
+        env:
+          KAZUMI_KEYSTORE_BASE64: ${{ secrets.KAZUMI_KEYSTORE_BASE64 }}
+          KAZUMI_KEYSTORE_PASSWORD: ${{ secrets.KAZUMI_KEYSTORE_PASSWORD }}
+          KAZUMI_KEY_ALIAS: ${{ secrets.KAZUMI_KEY_ALIAS }}
+          KAZUMI_KEY_PASSWORD: ${{ secrets.KAZUMI_KEY_PASSWORD }}
+
+      - name: Inspect APK native libraries
+        run: |
+          unzip -l Kazumi.apk | grep -E 'lib/(arm64-v8a|armeabi-v7a)/(libmpv|libmediakitandroidhelper)\.so'
+
+          AAPT=$(find "$ANDROID_HOME/build-tools" -name aapt | sort -V | tail -1)
+          "$AAPT" dump badging Kazumi.apk | tee apk-badging.txt
+          grep -q "versionName='2.3.3'" apk-badging.txt
+          grep -q "sdkVersion:'24'" apk-badging.txt
+        shell: bash
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: Kazumi-oldphone-universal
+          path: Kazumi.apk
+
+      - name: Update existing test release APK
+        run: |
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
+          gh release upload "$RELEASE_TAG" Kazumi.apk \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

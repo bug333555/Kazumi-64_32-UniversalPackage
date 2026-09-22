@@ -13,7 +13,9 @@ class RendererSettings extends StatefulWidget {
 
 class _RendererSettingsState extends State<RendererSettings> {
   late String _renderer =
-      GStorage.getSetting(SettingsKeys.androidVideoRenderer);
+      GStorage.getSetting(SettingsKeys.androidVideoRenderer) == 'gpu-next'
+          ? 'gpu'
+          : GStorage.getSetting(SettingsKeys.androidVideoRenderer);
 
   @override
   Widget build(BuildContext context) {
@@ -34,6 +36,7 @@ class _RendererSettingsState extends State<RendererSettings> {
               }
             },
             tiles: androidVideoRenderersList.entries
+                .where((entry) => entry.key != 'gpu-next')
                 .map((e) => SettingsTile<String>.radioTile(
                       title: Text(e.key),
                       description: Text(e.value),

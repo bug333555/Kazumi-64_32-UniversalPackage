@@ -880,8 +880,15 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
                       final needRestart = playerController.playback.playing;
                       playerController.pause();
                       RemotePlay()
-                          .castVideo(playerController.videoUrl,
-                              videoPageController.currentPlugin.referer)
+                          .castVideo(
+                            playerController.videoUrl,
+                            httpHeaders: {
+                              if (videoPageController.currentPlugin.referer
+                                  .isNotEmpty)
+                                'Referer':
+                                    videoPageController.currentPlugin.referer,
+                            },
+                          )
                           .whenComplete(() {
                         if (mounted && needRestart) {
                           playerController.play();
