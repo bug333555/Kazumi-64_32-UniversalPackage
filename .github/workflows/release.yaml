@@ -103,9 +103,9 @@ jobs:
           find lib/arm64-v8a -type f | sort | zip -r -X ../default-arm64-v8a-api24.jar -@
           find lib/armeabi-v7a -type f | sort | zip -r -X ../default-armeabi-v7a-api24.jar -@
           cd ../..
-          python3 tools/verify_libmpv_android_api.py \
+          python3 "$GITHUB_WORKSPACE/tools/verify_libmpv_android_api.py" \
             libmpv-build/buildscripts/default-arm64-v8a-api24.jar 24
-          python3 tools/verify_libmpv_android_api.py \
+          python3 "$GITHUB_WORKSPACE/tools/verify_libmpv_android_api.py" \
             libmpv-build/buildscripts/default-armeabi-v7a-api24.jar 24
         shell: bash
 
