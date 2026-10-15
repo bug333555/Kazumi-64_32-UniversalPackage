@@ -145,7 +145,7 @@ jobs:
           "$AAPT" dump badging Kazumi.apk | tee apk-badging.txt
           grep -q "versionName='2.2.0'" apk-badging.txt
           grep -q "versionCode='20201'" apk-badging.txt
-          grep -q "sdkVersion:'24'" apk-badging.txt
+          grep -q "sdkVersion:'26'" apk-badging.txt
         shell: bash
 
       - name: Upload APK
