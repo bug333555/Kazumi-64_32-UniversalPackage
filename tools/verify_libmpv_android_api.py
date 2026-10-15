@@ -60,19 +60,27 @@ def android_api_note(data: bytes) -> int | None:
 
 def read_entries(path: Path) -> dict[str, bytes]:
     with zipfile.ZipFile(path) as archive:
-        return {
+        available = {
             name: archive.read(name)
             for name in EXPECTED_ENTRIES
             if name in archive.namelist()
         }
+    if path.suffix.lower() == ".jar":
+        if len(available) != 1:
+            raise SystemExit(
+                f"{path.name}: expected one ARM libmpv entry, "
+                f"found {sorted(available)}"
+            )
+    else:
+        missing = EXPECTED_ENTRIES - available.keys()
+        if missing:
+            raise SystemExit(f"missing entries: {sorted(missing)}")
+    return available
 
 
 def main(path_string: str, expected_api: int = 24) -> int:
     path = Path(path_string)
     entries = read_entries(path)
-    missing = EXPECTED_ENTRIES - entries.keys()
-    if missing:
-        raise SystemExit(f"missing entries: {sorted(missing)}")
     for name in sorted(entries):
         data = entries[name]
         api = android_api_note(data)
