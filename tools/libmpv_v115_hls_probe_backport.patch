@@ -1,0 +1,79 @@
+diff --git a/libavformat/hls.c b/libavformat/hls.c
+index 579316d..143f2f1 100644
+--- a/libavformat/hls.c
++++ b/libavformat/hls.c
+@@ -2137,30 +2137,53 @@ static int hls_read_header(AVFormatContext *s)
+             pls->ctx->max_analyze_duration = s->max_analyze_duration > 0 ? s->max_analyze_duration : 4 * AV_TIME_BASE;
+             pls->ctx->interrupt_callback = s->interrupt_callback;
+             url = av_strdup(pls->segments[0]->url);
+-            unsigned skip = 0;
+-            if (!c->seg_allow_img) {
+-                uint8_t b[10] = { 0 }; // probe at most 10
+-                avio_read(&pls->pb.pub, b, sizeof(b));
+-                avio_seek(&pls->pb.pub, 0, SEEK_SET);
+-                const AVProbeData pd = {
+-                    .buf = b,               // png, gif read_probe only use this field
+-                    .buf_size = sizeof(b),
+-                };
+-// optional: ffifmt(av_find_input_format("gif" or "gif_pipe" or "png_pipe"))->read_probe
+-                int max_score = AVPROBE_SCORE_MAX - 2; // png_pipe, gif, gif_pipe score >= AVPROBE_SCORE_MAX - 1
+-                const AVInputFormat* img_fmt = av_probe_input_format2(&pd, 1, &max_score);
+-                if (img_fmt) {
+-                    if (av_strstart(img_fmt->name, "png", NULL)) { // "png_pipe"
+-                        skip = 3; // skip until ts sync byte 'G'(0x47)
+-                        av_log(s, AV_LOG_INFO, "segments pretend to be png\n");
+-                    } else if (av_strstart(img_fmt->name, "gif", NULL)) {    // "gif", "gif_pipe"
+-                        skip = 10;
+-                        av_log(s, AV_LOG_INFO, "segments pretend to be gif\n");
++            /* Kazumi #2687 backport: inspect disguised image headers, restore
++             * the read position, and drop the misleading URL extension from
++             * the actual format probe. The old v1.1.5 bundle already carries
++             * the PNG/GIF offset workaround; this keeps its API-21 ABI while
++             * importing the v1.3.0 HLS probing fix. */
++            {
++                uint8_t b[10] = { 0 };
++                unsigned probe_offset = 0;
++                const char *probe_url = url;
++                int n = avio_read(&pls->pb.pub, b, sizeof(b));
++                if (n < 0 && n != AVERROR_EOF) {
++                    ret = n;
++                    av_log(s, AV_LOG_ERROR, "Failed to read segment header for probing: %s\n",
++                           av_err2str(ret));
++                    avformat_free_context(pls->ctx);
++                    pls->ctx = NULL;
++                    av_free(url);
++                    return ret;
++                }
++                if (n == AVERROR_EOF)
++                    n = 0;
++                if ((ret = avio_seek(&pls->pb.pub, 0, SEEK_SET)) < 0) {
++                    av_log(s, AV_LOG_ERROR, "Failed to restore segment read position after signature check: %s\n",
++                           av_err2str(ret));
++                    avformat_free_context(pls->ctx);
++                    pls->ctx = NULL;
++                    av_free(url);
++                    return ret;
++                }
++                if (!c->seg_allow_img) {
++                    if (n >= 8 && !memcmp(b, "\x89PNG\r\n\x1a\n", 8)) {
++                        probe_offset = 3;
++                        probe_url = NULL;
++                        av_log(s, AV_LOG_INFO,
++                               "Segment starts with png magic, probing without filename at offset %u\n",
++                               probe_offset);
++                    } else if (n >= 6 && (!memcmp(b, "GIF87a", 6) || !memcmp(b, "GIF89a", 6))) {
++                        probe_offset = 10;
++                        probe_url = NULL;
++                        av_log(s, AV_LOG_INFO,
++                               "Segment starts with gif magic, probing without filename at offset %u\n",
++                               probe_offset);
+                     }
+                 }
++                ret = av_probe_input_buffer(&pls->pb.pub, &in_fmt, probe_url, NULL,
++                                            probe_offset, 0);
+             }
+-
+-            ret = av_probe_input_buffer(&pls->pb.pub, &in_fmt, url, NULL, skip, 0);
+             if (ret < 0) {
+                 /* Free the ctx - it isn't initialized properly at this point,
+                 * so avformat_close_input shouldn't be called. If

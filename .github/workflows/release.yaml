@@ -75,14 +75,15 @@ jobs:
           --dart-define=DANDANAPI_KEY=$DANDANAPI_KEY
         shell: bash
 
-      - name: Build libmpv v1.3.0 HLS fix for API 24
+      - name: Build libmpv v1.1.5 with Issue #2687 HLS backport (API 21)
         run: |
           git clone --filter=blob:none --no-checkout \
             https://github.com/Predidit/libmpv-android-video-build.git libmpv-build
           cd libmpv-build
-          git fetch --depth 1 origin e09ec94907f07d38620ff54894810037a7bc0c4f
-          git checkout --detach e09ec94907f07d38620ff54894810037a7bc0c4f
-          sed -i 's/local apilvl=26/local apilvl=24/' buildscripts/build.sh
+          git fetch --depth 1 origin refs/tags/v1.1.5:refs/tags/v1.1.5
+          git checkout --detach refs/tags/v1.1.5
+          cp "$GITHUB_WORKSPACE/tools/libmpv_v115_hls_probe_backport.patch" \
+            buildscripts/patches/ffmpeg/ffmpeg-hls-z-2687-backport.patch
           cd buildscripts
           ./download.sh
           ./patch.sh
@@ -100,13 +101,13 @@ jobs:
           cp prefix/arm64-v8a/usr/local/lib/*.so temp/lib/arm64-v8a/
           cp prefix/armeabi-v7a/usr/local/lib/*.so temp/lib/armeabi-v7a/
           cd temp
-          find lib/arm64-v8a -type f | sort | zip -r -X ../default-arm64-v8a-api24.jar -@
-          find lib/armeabi-v7a -type f | sort | zip -r -X ../default-armeabi-v7a-api24.jar -@
+          find lib/arm64-v8a -type f | sort | zip -r -X ../default-arm64-v8a-v115.jar -@
+          find lib/armeabi-v7a -type f | sort | zip -r -X ../default-armeabi-v7a-v115.jar -@
           cd ../..
           python3 "$GITHUB_WORKSPACE/tools/verify_libmpv_android_api.py" \
-            libmpv-build/buildscripts/default-arm64-v8a-api24.jar 24
+            libmpv-build/buildscripts/default-arm64-v8a-v115.jar 21
           python3 "$GITHUB_WORKSPACE/tools/verify_libmpv_android_api.py" \
-            libmpv-build/buildscripts/default-armeabi-v7a-api24.jar 24
+            libmpv-build/buildscripts/default-armeabi-v7a-v115.jar 21
         shell: bash
 
       - name: Swap both ABIs to compatibility libmpv
@@ -119,8 +120,8 @@ jobs:
           zip -d Kazumi.apk lib/armeabi-v7a/libmediakitandroidhelper.so || true
 
           mkdir -p libswap/lib/arm64-v8a libswap/lib/armeabi-v7a
-          unzip -o libmpv-build/buildscripts/default-arm64-v8a-api24.jar -d arm64_libs/
-          unzip -o libmpv-build/buildscripts/default-armeabi-v7a-api24.jar -d arm32_libs/
+          unzip -o libmpv-build/buildscripts/default-arm64-v8a-v115.jar -d arm64_libs/
+          unzip -o libmpv-build/buildscripts/default-armeabi-v7a-v115.jar -d arm32_libs/
           cp arm64_libs/lib/arm64-v8a/libmpv.so libswap/lib/arm64-v8a/
           cp arm64_libs/lib/arm64-v8a/libmediakitandroidhelper.so libswap/lib/arm64-v8a/
           cp arm32_libs/lib/armeabi-v7a/libmpv.so libswap/lib/armeabi-v7a/
@@ -133,7 +134,8 @@ jobs:
           test "$(unzip -p Kazumi.apk lib/arm64-v8a/libmediakitandroidhelper.so | sha256sum | awk '{print $1}')" = "a6862031015e390aa8a64536411132cf4df6a5a9dcf782f0d68b995380a1cccb"
           test "$(unzip -p Kazumi.apk lib/armeabi-v7a/libmediakitandroidhelper.so | sha256sum | awk '{print $1}')" = "698ce761945a3bdaf6ffe690e715fc510bc30a3571c5ac6768a734847232d5cc"
 
-          python3 tools/verify_libmpv_android_api.py Kazumi.apk 24
+          python3 tools/verify_libmpv_android_api.py Kazumi.apk 21
+          python3 tools/verify_2687_native_fix.py Kazumi.apk
 
           ZIPALIGN=$(find "$ANDROID_HOME/build-tools" -name zipalign | sort -V | tail -1)
           "$ZIPALIGN" -f -p 4 Kazumi.apk Kazumi-aligned.apk
