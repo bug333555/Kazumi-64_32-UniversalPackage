@@ -75,16 +75,38 @@ jobs:
           --dart-define=DANDANAPI_KEY=$DANDANAPI_KEY
         shell: bash
 
-      - name: Download libmpv HLS fix for issue #2687
+      - name: Build libmpv v1.3.0 HLS fix for API 24
         run: |
-          curl -fL -o arm64.jar \
-            "https://github.com/Predidit/libmpv-android-video-build/releases/download/v1.3.0/default-arm64-v8a.jar"
-          curl -fL -o arm32.jar \
-            "https://github.com/Predidit/libmpv-android-video-build/releases/download/v1.3.0/default-armeabi-v7a.jar"
-          echo "30c2d795dbc04355ab389f76e4d6bc5b3ccf57f0251e7aa889055d8ab0406d7e  arm64.jar" | sha256sum -c -
-          echo "4565dafdf761fa3dfccba7ef8bb44e96d19d5e0122c4ad9caa45ab2f7cc6310f  arm32.jar" | sha256sum -c -
-          unzip -o arm64.jar -d arm64_libs/
-          unzip -o arm32.jar -d arm32_libs/
+          git clone --filter=blob:none --no-checkout \
+            https://github.com/Predidit/libmpv-android-video-build.git libmpv-build
+          cd libmpv-build
+          git fetch --depth 1 origin e09ec94907f07d38620ff54894810037a7bc0c4f
+          git checkout --detach e09ec94907f07d38620ff54894810037a7bc0c4f
+          sed -i 's/local apilvl=26/local apilvl=24/' buildscripts/build.sh
+          cd buildscripts
+          ./download.sh
+          ./patch.sh
+          cp flavors/default.sh scripts/ffmpeg.sh
+          ./build.sh --arch arm64
+          ./build.sh --arch armv7l
+          cd deps/media-kit-android-helper
+          chmod +x gradlew
+          ./gradlew assembleRelease
+          unzip -o app/build/outputs/apk/release/app-release.apk -d app/build/outputs/apk/release
+          cp app/build/outputs/apk/release/lib/arm64-v8a/libmediakitandroidhelper.so ../../prefix/arm64-v8a/usr/local/lib/
+          cp app/build/outputs/apk/release/lib/armeabi-v7a/libmediakitandroidhelper.so ../../prefix/armeabi-v7a/usr/local/lib/
+          cd ../..
+          mkdir -p temp/lib/arm64-v8a temp/lib/armeabi-v7a
+          cp prefix/arm64-v8a/usr/local/lib/*.so temp/lib/arm64-v8a/
+          cp prefix/armeabi-v7a/usr/local/lib/*.so temp/lib/armeabi-v7a/
+          cd temp
+          find lib/arm64-v8a -type f | sort | zip -r -X ../default-arm64-v8a-api24.jar -@
+          find lib/armeabi-v7a -type f | sort | zip -r -X ../default-armeabi-v7a-api24.jar -@
+          cd ../..
+          python3 tools/verify_libmpv_android_api.py \
+            libmpv-build/buildscripts/default-arm64-v8a-api24.jar 24
+          python3 tools/verify_libmpv_android_api.py \
+            libmpv-build/buildscripts/default-armeabi-v7a-api24.jar 24
         shell: bash
 
       - name: Swap both ABIs to compatibility libmpv
@@ -97,6 +119,8 @@ jobs:
           zip -d Kazumi.apk lib/armeabi-v7a/libmediakitandroidhelper.so || true
 
           mkdir -p libswap/lib/arm64-v8a libswap/lib/armeabi-v7a
+          unzip -o libmpv-build/buildscripts/default-arm64-v8a-api24.jar -d arm64_libs/
+          unzip -o libmpv-build/buildscripts/default-armeabi-v7a-api24.jar -d arm32_libs/
           cp arm64_libs/lib/arm64-v8a/libmpv.so libswap/lib/arm64-v8a/
           cp arm64_libs/lib/arm64-v8a/libmediakitandroidhelper.so libswap/lib/arm64-v8a/
           cp arm32_libs/lib/armeabi-v7a/libmpv.so libswap/lib/armeabi-v7a/
@@ -109,8 +133,7 @@ jobs:
           test "$(unzip -p Kazumi.apk lib/arm64-v8a/libmediakitandroidhelper.so | sha256sum | awk '{print $1}')" = "a6862031015e390aa8a64536411132cf4df6a5a9dcf782f0d68b995380a1cccb"
           test "$(unzip -p Kazumi.apk lib/armeabi-v7a/libmediakitandroidhelper.so | sha256sum | awk '{print $1}')" = "698ce761945a3bdaf6ffe690e715fc510bc30a3571c5ac6768a734847232d5cc"
 
-          test "$(unzip -p Kazumi.apk lib/arm64-v8a/libmpv.so | sha256sum | awk '{print $1}')" = "6bd2ead8e30fa774a7a4ce16232e68a370cc629a12aec22fa282e224cb3e6a65"
-          test "$(unzip -p Kazumi.apk lib/armeabi-v7a/libmpv.so | sha256sum | awk '{print $1}')" = "5785b120232bd485e0053a593bd56de69065e240c73a07e0ba13a34500ec1248"
+          python3 tools/verify_libmpv_android_api.py Kazumi.apk 24
 
           ZIPALIGN=$(find "$ANDROID_HOME/build-tools" -name zipalign | sort -V | tail -1)
           "$ZIPALIGN" -f -p 4 Kazumi.apk Kazumi-aligned.apk
@@ -145,7 +168,7 @@ jobs:
           "$AAPT" dump badging Kazumi.apk | tee apk-badging.txt
           grep -q "versionName='2.2.0'" apk-badging.txt
           grep -q "versionCode='20201'" apk-badging.txt
-          grep -q "sdkVersion:'26'" apk-badging.txt
+          grep -q "sdkVersion:'24'" apk-badging.txt
         shell: bash
 
       - name: Upload APK
