@@ -29,7 +29,7 @@ jobs:
           short_sha="$(git rev-parse --short HEAD)"
           echo "APP_VERSION=$app_version" >> "$GITHUB_ENV"
           echo "SHORT_SHA=$short_sha" >> "$GITHUB_ENV"
-          echo "RELEASE_TAG=v2.1.4-universal-dlna-test" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=v2.2.0-2687-fix" >> "$GITHUB_ENV"
         shell: bash
 
       - name: Set up JDK 17
@@ -70,6 +70,7 @@ jobs:
       - name: Build Flutter APK (fat, all ABIs)
         run: >-
           flutter build apk
+          --build-number=20201
           --dart-define=DANDANAPI_APPID=$DANDANAPI_APPID
           --dart-define=DANDANAPI_KEY=$DANDANAPI_KEY
         shell: bash
@@ -143,6 +144,7 @@ jobs:
           AAPT=$(find "$ANDROID_HOME/build-tools" -name aapt | sort -V | tail -1)
           "$AAPT" dump badging Kazumi.apk | tee apk-badging.txt
           grep -q "versionName='2.2.0'" apk-badging.txt
+          grep -q "versionCode='20201'" apk-badging.txt
           grep -q "sdkVersion:'24'" apk-badging.txt
         shell: bash
 
