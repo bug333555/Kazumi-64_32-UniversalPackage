@@ -86,6 +86,8 @@ abstract class _PlayerPlaybackController with Store {
   _OwnedPlayer? _ownedPlayer;
   Player? get mediaPlayer => _ownedPlayer?.player;
   VideoController? videoController;
+  Future<void> _playerOpenQueue = Future<void>.value();
+  StreamSubscription<String>? _playerErrorSubscription;
 
   bool hAenable = true;
   late String hardwareDecoder;
@@ -241,11 +243,44 @@ abstract class _PlayerPlaybackController with Store {
     }
   }
 
+  Future<void> _keepPlayerOpenQueueAlive(Future<Player?> operation) async {
+    try {
+      await operation;
+    } catch (_) {
+      // The operation's caller receives the original error. The queue itself
+      // must stay usable for the next episode switch.
+    }
+  }
+
   Future<Player?> createVideoController(
     Map<String, String> httpHeaders,
     bool adBlockerEnabled, {
     required bool Function() canInstall,
     int offset = 0,
+    bool reuseExisting = false,
+  }) {
+    // NativePlayer.open serializes its own commands, but setProperty calls do
+    // not use that lock. Serialize the complete per-source setup plus open so
+    // a rapid double switch cannot interleave HLS properties on one player.
+    final operation = _playerOpenQueue.then(
+      (_) => _createVideoController(
+        httpHeaders,
+        adBlockerEnabled,
+        canInstall: canInstall,
+        offset: offset,
+        reuseExisting: reuseExisting,
+      ),
+    );
+    _playerOpenQueue = _keepPlayerOpenQueueAlive(operation);
+    return operation;
+  }
+
+  Future<Player?> _createVideoController(
+    Map<String, String> httpHeaders,
+    bool adBlockerEnabled, {
+    required bool Function() canInstall,
+    int offset = 0,
+    bool reuseExisting = false,
   }) async {
     startOffset = offset;
     superResolutionMode = SuperResolutionMode.fromStorageValue(
@@ -259,25 +294,49 @@ abstract class _PlayerPlaybackController with Store {
     lowMemoryMode = GStorage.getSetting(SettingsKeys.lowMemoryMode);
     playerDebugMode = GStorage.getSetting(SettingsKeys.playerDebugMode);
 
+    final existing = reuseExisting ? _ownedPlayer : null;
+    final reusable = existing != null &&
+        videoController != null &&
+        (existing.player.platform?.videoControllerCompleter.isCompleted ??
+            false);
+    if (reuseExisting && existing != null && !reusable) {
+      // A controller whose Android surface never completed is unsafe to
+      // reopen. Detach it before the fallback player is created.
+      existing.player.platform?.isVideoControllerAttached = false;
+      if (identical(_ownedPlayer, existing)) {
+        _ownedPlayer = null;
+        videoController = null;
+      }
+      existing.disposeInBackground();
+    }
+
     if (!canInstall()) {
       return null;
     }
-    final candidate = _OwnedPlayer(
-      Player(
-        configuration: PlayerConfiguration(
-          bufferSize: lowMemoryMode ? 15 * 1024 * 1024 : 1500 * 1024 * 1024,
-          osc: false,
-          logLevel: MPVLogLevel.values[debug.playerLogLevel],
-          adBlocker: adBlockerEnabled,
-        ),
-      ),
-    );
+    final candidate = reusable
+        ? existing
+        : _OwnedPlayer(
+            Player(
+              configuration: PlayerConfiguration(
+                bufferSize:
+                    lowMemoryMode ? 15 * 1024 * 1024 : 1500 * 1024 * 1024,
+                osc: false,
+                logLevel: MPVLogLevel.values[debug.playerLogLevel],
+                adBlocker: adBlockerEnabled,
+              ),
+            ),
+          );
+    final reusingPlayer = reusable;
     final player = candidate.player;
     if (!canInstall()) {
-      candidate.disposeInBackground();
+      if (!reusingPlayer) {
+        candidate.disposeInBackground();
+      }
       return null;
     }
-    _ownedPlayer = candidate;
+    if (!reusingPlayer) {
+      _ownedPlayer = candidate;
+    }
 
     try {
       debug.playerLog.clear();
@@ -383,7 +442,8 @@ abstract class _PlayerPlaybackController with Store {
       }
 
       bool showPlayerError = GStorage.getSetting(SettingsKeys.showPlayerError);
-      player.stream.error.listen((event) {
+      await _playerErrorSubscription?.cancel();
+      _playerErrorSubscription = player.stream.error.listen((event) {
         if (isCurrentPlayer(player)) {
           // Do not leave the page in an endless loading state when a signed
           // playlist has expired or its first request fails.
@@ -408,7 +468,7 @@ abstract class _PlayerPlaybackController with Store {
             error: event);
       });
 
-      if (superResolutionMode != SuperResolutionMode.off) {
+      if (superResolutionMode != SuperResolutionMode.off || reusingPlayer) {
         await setShader(superResolutionMode, player: player);
         if (!isCurrentPlayer(player)) {
           return await _discardIfNotCurrent(candidate);
@@ -416,15 +476,16 @@ abstract class _PlayerPlaybackController with Store {
       }
 
       final sourceUrl = videoUrl();
-      if (isHlsVideoUrl(sourceUrl)) {
-        // Signed Sorani URLs are HLS playlists even when their response
-        // headers are delayed or the first segment resembles an image. The
-        // native v1.3 HLS fix handles the segment itself; this hint prevents
-        // FFmpeg from getting stuck in generic probing before that code runs.
-        await pp.setProperty('demuxer-lavf-format', 'hls');
-        if (!isCurrentPlayer(player)) {
-          return await _discardIfNotCurrent(candidate);
-        }
+      final isHls = isHlsVideoUrl(sourceUrl);
+      // Signed Sorani URLs are HLS playlists even when their response headers
+      // are delayed or the first segment resembles an image. The native HLS
+      // backport handles the segment itself; this hint prevents generic
+      // probing from getting stuck before that code runs.
+      // This property belongs to the native player, so clear it when a
+      // reused player switches back from HLS to a local/regular source.
+      await pp.setProperty('demuxer-lavf-format', isHls ? 'hls' : '');
+      if (!isCurrentPlayer(player)) {
+        return await _discardIfNotCurrent(candidate);
       }
 
       await player.open(
@@ -580,15 +641,33 @@ abstract class _PlayerPlaybackController with Store {
     }
   }
 
-  Future<void> stop() async {
+  Future<void> stop({bool preservePlayer = false}) async {
     final ownedPlayer = _ownedPlayer;
-    _ownedPlayer = null;
-    videoController = null;
     playing = false;
     loading = true;
-    // media_kit stops playback as part of disposal before releasing native
+    isBuffering = true;
+
+    if (preservePlayer && ownedPlayer != null && videoController != null) {
+      final platform = ownedPlayer.player.platform;
+      if (platform?.videoControllerCompleter.isCompleted ?? false) {
+        // Keep the Android surface and native player alive. The next queued
+        // open will stop/replace the current media on this same instance.
+        return;
+      }
+      // An unfinished surface is the same unbounded wait that caused the old
+      // dispose path to hold media-kit's process-wide lock. Detach it before
+      // falling back to a fresh player.
+      platform?.isVideoControllerAttached = false;
+    }
+
+    _ownedPlayer = null;
+    videoController = null;
+    await _playerErrorSubscription?.cancel();
+    _playerErrorSubscription = null;
+    // media-kit stops playback as part of disposal before releasing native
     // resources. A network-stalled HLS request can make that native sequence
-    // wait indefinitely, so never block episode switching on it.
+    // wait indefinitely, so route shutdown and the unsafe-surface fallback
+    // release it independently from the UI isolate.
     ownedPlayer?.disposeInBackground();
     await _cancelDebugInfo();
   }

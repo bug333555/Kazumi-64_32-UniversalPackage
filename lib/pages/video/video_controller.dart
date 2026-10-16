@@ -433,7 +433,7 @@ abstract class _VideoPageController with Store implements Disposable {
     playerController.danmaku.finishDanmakuLoad();
     _videoSourceService?.cancel();
 
-    await playerController.stop();
+    await playerController.stop(preservePlayer: true);
     if (session.isStale) {
       return;
     }
@@ -529,6 +529,7 @@ abstract class _VideoPageController with Store implements Disposable {
       coverUrl: bangumiItem.images['large'],
       bangumiName:
           bangumiItem.nameCn.isNotEmpty ? bangumiItem.nameCn : bangumiItem.name,
+      reuseExisting: true,
     );
 
     final initialized = await playerController.init(params);
@@ -663,6 +664,7 @@ abstract class _VideoPageController with Store implements Disposable {
         bangumiName: bangumiItem.nameCn.isNotEmpty
             ? bangumiItem.nameCn
             : bangumiItem.name,
+        reuseExisting: true,
       );
 
       final initialized = await playerController.init(params);

@@ -2,8 +2,8 @@
 
 The universal package keeps the existing 2.2.0 Dart/Flutter/DLNA code and its
 stable libmediakitandroidhelper libraries. The two ARM libmpv entries are
-rebuilt from the official v1.1.5 builder with only the HLS probe fix carried
-back from upstream v1.3.0.
+rebuilt from the official v1.1.5 builder with the FFmpeg-6 HLS probe and
+dual-track PTS-offset fixes carried back from upstream v1.2.7/1.3.0.
 """
 
 from __future__ import annotations
@@ -22,6 +22,15 @@ EXPECTED_HELPERS = {
     "lib/armeabi-v7a/libmediakitandroidhelper.so":
         "698ce761945a3bdaf6ffe690e715fc510bc30a3571c5ac6768a734847232d5cc",
 }
+REQUIRED_MARKERS = (
+    b"Segment starts with png magic, probing without filename",
+    b"Segment starts with gif magic, probing without filename",
+    b"Kazumi: Stream has DISCONTINUITY tags, ad filtering enabled",
+    b"Kazumi: Video resuming at PTS=",
+    b"Kazumi: Audio resuming at PTS=",
+    b"Kazumi: Ad skipped! Offset adjusted by",
+    b"Kazumi: Ad detected! PTS jumped from",
+)
 
 
 def android_api_note(data: bytes) -> int | None:
@@ -70,6 +79,9 @@ def main(apk_path: str) -> int:
             api = android_api_note(data)
             if api != EXPECTED_API:
                 raise SystemExit(f"{entry}: expected Android API {EXPECTED_API}, got {api}")
+            missing = [marker.decode("ascii") for marker in REQUIRED_MARKERS if marker not in data]
+            if missing:
+                raise SystemExit(f"{entry}: missing HLS backport markers {missing}")
             print(f"{entry}: OK size={len(data)} api={api} sha256={actual}")
         for entry, expected_sha256 in EXPECTED_HELPERS.items():
             data = apk.read(entry)

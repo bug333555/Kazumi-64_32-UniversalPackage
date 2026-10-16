@@ -17,6 +17,9 @@ class PlaybackInitParams {
   final int currentRoad;
   final String? coverUrl;
   final String? bangumiName;
+  /// Reopen the existing native player for an episode switch. Route shutdown
+  /// keeps the default destructive disposal path.
+  final bool reuseExisting;
 
   const PlaybackInitParams({
     required this.videoUrl,
@@ -35,6 +38,7 @@ class PlaybackInitParams {
     this.sortNumber,
     this.coverUrl,
     this.bangumiName,
+    this.reuseExisting = false,
   });
 }
 

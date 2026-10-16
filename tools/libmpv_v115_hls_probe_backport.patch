@@ -29,7 +29,7 @@ index 579316d..143f2f1 100644
 +             * the read position, and drop the misleading URL extension from
 +             * the actual format probe. The old v1.1.5 bundle already carries
 +             * the PNG/GIF offset workaround; this keeps its API-21 ABI while
-+             * importing the v1.3.0 HLS probing fix. */
++             * importing the v1.2.7 HLS probing fix. */
 +            {
 +                uint8_t b[10] = { 0 };
 +                unsigned probe_offset = 0;

@@ -87,6 +87,7 @@ class PlayerController implements Disposable {
   Timer? hideVolumeUITimer;
   Timer? _volumeGestureSyncTimer;
   double? _pendingGestureVolume;
+  bool _volumeListenerAttached = false;
 
   bool muted = false;
   double _preMuteVolume = 100;
@@ -197,9 +198,11 @@ class PlayerController implements Disposable {
     playback.buttonSkipTime = GStorage.getSetting(SettingsKeys.buttonSkipTime);
     playback.arrowKeySkipTime =
         GStorage.getSetting(SettingsKeys.arrowKeySkipTime);
-    try {
-      await _releasePlaybackResources();
-    } catch (_) {}
+    if (!params.reuseExisting) {
+      try {
+        await _releasePlaybackResources();
+      } catch (_) {}
+    }
     if (initialization.isStale) {
       return false;
     }
@@ -211,6 +214,7 @@ class PlayerController implements Disposable {
         params.adBlockerEnabled,
         canInstall: () => initialization.isActive,
         offset: params.offset,
+        reuseExisting: params.reuseExisting,
       );
     } catch (e) {
       if (initialization.isStale) {
@@ -251,23 +255,29 @@ class PlayerController implements Disposable {
         return false;
       }
 
-      FlutterVolumeController.addListener((volume) {
-        if (player == null || !_ownsInitialization(initialization, player)) {
-          return;
-        }
-        if (panel.volumeSeeking) {
-          return;
-        }
-        playback.applyExternalVolume(volume * 100);
-        if (!Platform.isAndroid && !panel.volumeSeeking) {
-          panel.showVolume = true;
-          hideVolumeUITimer?.cancel();
-          hideVolumeUITimer = Timer(const Duration(seconds: 1), () {
-            panel.showVolume = false;
-            hideVolumeUITimer = null;
-          });
-        }
-      }, category: AudioSessionCategory.playback, emitOnStart: false);
+      if (!_volumeListenerAttached) {
+        FlutterVolumeController.addListener((volume) {
+          // Read the current player dynamically so a route-scoped listener
+          // remains valid when an episode reopens the same native instance or
+          // falls back to a fresh one.
+          if (playback.mediaPlayer == null) {
+            return;
+          }
+          if (panel.volumeSeeking) {
+            return;
+          }
+          playback.applyExternalVolume(volume * 100);
+          if (!Platform.isAndroid && !panel.volumeSeeking) {
+            panel.showVolume = true;
+            hideVolumeUITimer?.cancel();
+            hideVolumeUITimer = Timer(const Duration(seconds: 1), () {
+              panel.showVolume = false;
+              hideVolumeUITimer = null;
+            });
+          }
+        }, category: AudioSessionCategory.playback, emitOnStart: false);
+        _volumeListenerAttached = true;
+      }
       if (!_ownsInitialization(initialization, player)) {
         return false;
       }
@@ -413,10 +423,19 @@ class PlayerController implements Disposable {
     ]);
   }
 
-  Future<void> _releasePlaybackResources() async {
+  Future<void> _releasePlaybackResources({bool preservePlayer = false}) async {
+    if (preservePlayer) {
+      // Episode switches keep the route-scoped audio session, volume listener,
+      // and Android video surface alive. Reopening the same Player avoids the
+      // old-device dispose/global-lock convoy.
+      await playback.stop(preservePlayer: true);
+      return;
+    }
+
     hideVolumeUITimer?.cancel();
     _volumeGestureSyncTimer?.cancel();
     FlutterVolumeController.removeListener();
+    _volumeListenerAttached = false;
     await Future.wait([
       audioController.deactivate(),
       playback.stop(),
@@ -436,9 +455,9 @@ class PlayerController implements Disposable {
     }
   }
 
-  Future<void> stop() async {
+  Future<void> stop({bool preservePlayer = false}) async {
     _initializations.cancel();
-    await _releasePlaybackResources();
+    await _releasePlaybackResources(preservePlayer: preservePlayer);
   }
 
   Future<Uint8List?> screenshot({String format = 'image/jpeg'}) async {

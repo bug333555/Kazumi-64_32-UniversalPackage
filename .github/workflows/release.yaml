@@ -75,15 +75,17 @@ jobs:
           --dart-define=DANDANAPI_KEY=$DANDANAPI_KEY
         shell: bash
 
-      - name: Build full libmpv v1.3.0 HLS fix with old renderer profile (API 21)
+      - name: Build libmpv v1.1.5 with complete Issue #2687 HLS backport (API 21)
         run: |
           git clone --filter=blob:none --no-checkout \
             https://github.com/Predidit/libmpv-android-video-build.git libmpv-build
           cd libmpv-build
-          git fetch --depth 1 origin refs/tags/v1.3.0:refs/tags/v1.3.0
-          git checkout --detach refs/tags/v1.3.0
-          sed -i 's/local apilvl=26/local apilvl=21/' buildscripts/build.sh
-          sed -i 's/-Dvulkan=enabled/-Dvulkan=disabled/' buildscripts/scripts/mpv.sh
+          git fetch --depth 1 origin refs/tags/v1.1.5:refs/tags/v1.1.5
+          git checkout --detach refs/tags/v1.1.5
+          cp "$GITHUB_WORKSPACE/tools/libmpv_v115_hls_probe_backport.patch" \
+            buildscripts/patches/ffmpeg/ffmpeg-hls-z-2687-backport.patch
+          cp "$GITHUB_WORKSPACE/tools/libmpv_v115_hls_pts_offset.patch" \
+            buildscripts/patches/ffmpeg/ffmpeg-hls-z-2687-pts-offset.patch
           cd buildscripts
           ./download.sh
           ./patch.sh
@@ -101,17 +103,13 @@ jobs:
           cp prefix/arm64-v8a/usr/local/lib/*.so temp/lib/arm64-v8a/
           cp prefix/armeabi-v7a/usr/local/lib/*.so temp/lib/armeabi-v7a/
           cd temp
-          find lib/arm64-v8a -type f | sort | zip -r -X ../default-arm64-v8a-v13-api21.jar -@
-          find lib/armeabi-v7a -type f | sort | zip -r -X ../default-armeabi-v7a-v13-api21.jar -@
+          find lib/arm64-v8a -type f | sort | zip -r -X ../default-arm64-v8a-v115-api21.jar -@
+          find lib/armeabi-v7a -type f | sort | zip -r -X ../default-armeabi-v7a-v115-api21.jar -@
           cd ../..
           python3 "$GITHUB_WORKSPACE/tools/verify_libmpv_android_api.py" \
-            buildscripts/default-arm64-v8a-v13-api21.jar 21
+            buildscripts/default-arm64-v8a-v115-api21.jar 21
           python3 "$GITHUB_WORKSPACE/tools/verify_libmpv_android_api.py" \
-            buildscripts/default-armeabi-v7a-v13-api21.jar 21
-          python3 "$GITHUB_WORKSPACE/tools/verify_2687_full_native_fix.py" \
-            buildscripts/default-arm64-v8a-v13-api21.jar 21
-          python3 "$GITHUB_WORKSPACE/tools/verify_2687_full_native_fix.py" \
-            buildscripts/default-armeabi-v7a-v13-api21.jar 21
+            buildscripts/default-armeabi-v7a-v115-api21.jar 21
         shell: bash
 
       - name: Swap both ABIs to compatibility libmpv
@@ -124,8 +122,8 @@ jobs:
           zip -d Kazumi.apk lib/armeabi-v7a/libmediakitandroidhelper.so || true
 
           mkdir -p libswap/lib/arm64-v8a libswap/lib/armeabi-v7a
-          unzip -o libmpv-build/buildscripts/default-arm64-v8a-v13-api21.jar -d arm64_libs/
-          unzip -o libmpv-build/buildscripts/default-armeabi-v7a-v13-api21.jar -d arm32_libs/
+          unzip -o libmpv-build/buildscripts/default-arm64-v8a-v115-api21.jar -d arm64_libs/
+          unzip -o libmpv-build/buildscripts/default-armeabi-v7a-v115-api21.jar -d arm32_libs/
           cp arm64_libs/lib/arm64-v8a/libmpv.so libswap/lib/arm64-v8a/
           cp arm64_libs/lib/arm64-v8a/libmediakitandroidhelper.so libswap/lib/arm64-v8a/
           cp arm32_libs/lib/armeabi-v7a/libmpv.so libswap/lib/armeabi-v7a/
@@ -139,7 +137,7 @@ jobs:
           test "$(unzip -p Kazumi.apk lib/armeabi-v7a/libmediakitandroidhelper.so | sha256sum | awk '{print $1}')" = "698ce761945a3bdaf6ffe690e715fc510bc30a3571c5ac6768a734847232d5cc"
 
           python3 tools/verify_libmpv_android_api.py Kazumi.apk 21
-          python3 tools/verify_2687_full_native_fix.py Kazumi.apk 21
+          python3 tools/verify_2687_native_fix.py Kazumi.apk
 
           ZIPALIGN=$(find "$ANDROID_HOME/build-tools" -name zipalign | sort -V | tail -1)
           "$ZIPALIGN" -f -p 4 Kazumi.apk Kazumi-aligned.apk
@@ -180,7 +178,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v7
         with:
-          name: Kazumi-oldphone-universal-v13-api21
+          name: Kazumi-oldphone-universal-v115-api21
           path: Kazumi.apk
 
       - name: Update existing test release APK
