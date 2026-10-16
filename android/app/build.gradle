@@ -47,7 +47,7 @@ android {
         applicationId "com.predidit.kazumi"
         // You can update the following values to match your application needs.
         // For more information, see: https://docs.flutter.dev/deployment/android#reviewing-the-gradle-build-configuration.
-        // The #2687 backport keeps the API-21 libmpv ABI used by old devices.
+        // The #2687 full native migration keeps the API-21 libmpv ABI and old renderer profile.
         minSdkVersion 24
         targetSdkVersion flutter.targetSdkVersion
         versionCode flutterVersionCode.toInteger()
