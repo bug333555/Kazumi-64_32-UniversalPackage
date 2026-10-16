@@ -49,6 +49,13 @@ final class _OwnedPlayer {
 
   Future<void> _dispose() async {
     try {
+      // VideoController marks this flag before scheduling its Android surface
+      // creation. On old devices that surface setup can stall indefinitely;
+      // NativePlayer.dispose() otherwise waits on the same unbounded
+      // completer while holding media-kit's process-wide player lock. This
+      // player is already detached from the controller, so skip that stale
+      // surface wait and let native disposal issue its stop commands.
+      player.platform?.isVideoControllerAttached = false;
       await player.dispose();
     } catch (error, stackTrace) {
       KazumiLogger().e(
