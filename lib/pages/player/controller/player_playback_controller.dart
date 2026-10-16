@@ -1,5 +1,6 @@
 // ignore_for_file: library_private_types_in_public_api
 
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -14,6 +15,7 @@ import 'package:kazumi/services/network/proxy_utils.dart';
 import 'package:kazumi/services/network/system_proxy_service.dart';
 import 'package:kazumi/services/player/player_screenshot_service.dart';
 import 'package:kazumi/services/storage/storage.dart';
+import 'package:kazumi/services/video_source/video_source_format.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:mobx/mobx.dart';
@@ -33,6 +35,16 @@ final class _OwnedPlayer {
 
   Future<void> dispose() {
     return _disposeFuture ??= _dispose();
+  }
+
+  /// Detaches native cleanup from episode switching.
+  ///
+  /// A stalled HLS request can leave media-kit waiting inside its native
+  /// stop/dispose sequence. The old player is already unreachable from the
+  /// controller when this is called, so cleanup can finish independently
+  /// while the replacement player is created immediately.
+  void disposeInBackground() {
+    unawaited(dispose());
   }
 
   Future<void> _dispose() async {
@@ -115,7 +127,7 @@ abstract class _PlayerPlaybackController with Store {
     if (identical(_ownedPlayer, candidate)) {
       return candidate.player;
     }
-    await candidate.dispose();
+    candidate.disposeInBackground();
     return null;
   }
 
@@ -255,7 +267,7 @@ abstract class _PlayerPlaybackController with Store {
     );
     final player = candidate.player;
     if (!canInstall()) {
-      await candidate.dispose();
+      candidate.disposeInBackground();
       return null;
     }
     _ownedPlayer = candidate;
@@ -365,6 +377,12 @@ abstract class _PlayerPlaybackController with Store {
 
       bool showPlayerError = GStorage.getSetting(SettingsKeys.showPlayerError);
       player.stream.error.listen((event) {
+        if (isCurrentPlayer(player)) {
+          // Do not leave the page in an endless loading state when a signed
+          // playlist has expired or its first request fails.
+          loading = false;
+          isBuffering = false;
+        }
         if (showPlayerError) {
           if (!isCurrentPlayer(player)) {
             return;
@@ -390,8 +408,20 @@ abstract class _PlayerPlaybackController with Store {
         }
       }
 
+      final sourceUrl = videoUrl();
+      if (isHlsVideoUrl(sourceUrl)) {
+        // Signed Sorani URLs are HLS playlists even when their response
+        // headers are delayed or the first segment resembles an image. The
+        // native v1.3 HLS fix handles the segment itself; this hint prevents
+        // FFmpeg from getting stuck in generic probing before that code runs.
+        await pp.setProperty('demuxer-lavf-format', 'hls');
+        if (!isCurrentPlayer(player)) {
+          return await _discardIfNotCurrent(candidate);
+        }
+      }
+
       await player.open(
-        Media(videoUrl(),
+        Media(sourceUrl,
             start: Duration(seconds: offset), httpHeaders: httpHeaders),
         play: autoPlay,
       );
@@ -405,7 +435,7 @@ abstract class _PlayerPlaybackController with Store {
         _ownedPlayer = null;
         videoController = null;
       }
-      await candidate.dispose();
+      candidate.disposeInBackground();
       Error.throwWithStackTrace(error, stackTrace);
     }
   }
@@ -550,11 +580,10 @@ abstract class _PlayerPlaybackController with Store {
     playing = false;
     loading = true;
     // media_kit stops playback as part of disposal before releasing native
-    // resources. Debug subscriptions can be cancelled concurrently.
-    await Future.wait([
-      ownedPlayer?.dispose() ?? Future<void>.value(),
-      _cancelDebugInfo(),
-    ]);
+    // resources. A network-stalled HLS request can make that native sequence
+    // wait indefinitely, so never block episode switching on it.
+    ownedPlayer?.disposeInBackground();
+    await _cancelDebugInfo();
   }
 
   Future<Uint8List?> screenshot({String format = 'image/jpeg'}) async {
