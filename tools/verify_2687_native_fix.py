@@ -2,8 +2,9 @@
 
 The universal package keeps the existing 2.2.0 Dart/Flutter/DLNA code and its
 stable libmediakitandroidhelper libraries. The two ARM libmpv entries are
-rebuilt from the official v1.1.5 builder with the FFmpeg-6 HLS probe and
-dual-track PTS-offset fixes carried back from upstream v1.2.7/1.3.0.
+rebuilt from the official v1.1.5 builder with the FFmpeg-6 HLS probe, timeline
+rebasing/seek fixes, and dual-track PTS-offset fixes carried back from
+upstream v1.2.7/1.3.0.
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ EXPECTED_HELPERS = {
 REQUIRED_MARKERS = (
     b"Segment starts with png magic, probing without filename",
     b"Segment starts with gif magic, probing without filename",
+    b"First timestamp ",
     b"Kazumi: Stream has DISCONTINUITY tags, ad filtering enabled",
     b"Kazumi: Video resuming at PTS=",
     b"Kazumi: Audio resuming at PTS=",

@@ -1,0 +1,248 @@
+diff --git a/libavformat/hls.c b/libavformat/hls.c
+index eb31a304..a50a3a28 100644
+--- a/libavformat/hls.c
++++ b/libavformat/hls.c
+@@ -130,6 +130,8 @@ struct playlist {
+     int broken;
+     int64_t cur_seq_no;
+     int64_t last_seq_no;
++    /* Sequence number of the first segment read for the current timeline. */
++    int64_t first_read_seq_no;
+     int m3u8_hold_counters;
+     int64_t cur_seg_offset;
+     int64_t last_load_time;
+@@ -158,6 +160,9 @@ struct playlist {
+ 
+     HLSAudioSetupInfo audio_setup_info;
+ 
++    /* Constant offset of this playlist's DTS baseline relative to
++     * c->first_timestamp. */
++    int64_t ts_offset;
+     int64_t seek_timestamp;
+     int seek_flags;
+     int seek_stream_index; /* into subdemuxer stream array */
+@@ -218,6 +223,8 @@ typedef struct HLSContext {
+     int prefer_x_start;
+     int first_packet;
+     int64_t first_timestamp;
++    struct playlist *first_timestamp_pls;
++    int first_timestamp_locked;
+     int64_t cur_timestamp;
+     AVIOInterruptCB *interrupt_callback;
+     AVDictionary *avio_opts;
+@@ -343,6 +350,8 @@ static struct playlist *new_playlist(HLSContext *c, const char *url,
+         av_free(pls);
+         return NULL;
+     }
++    pls->first_read_seq_no = -1;
++    pls->ts_offset = AV_NOPTS_VALUE;
+     pls->seek_timestamp = AV_NOPTS_VALUE;
+ 
+     pls->is_id3_timestamped = -1;
+@@ -1038,7 +1047,8 @@ static int parse_playlist(HLSContext *c, const char *url,
+         }
+     }
+     if (prev_segments) {
+-        if (pls->start_seq_no > prev_start_seq_no && c->first_timestamp != AV_NOPTS_VALUE) {
++        if (pls->start_seq_no > prev_start_seq_no && c->first_timestamp != AV_NOPTS_VALUE &&
++            c->first_timestamp_pls == pls) {
+             int64_t prev_timestamp = c->first_timestamp;
+             int i;
+             int64_t diff = pls->start_seq_no - prev_start_seq_no;
+@@ -1064,9 +1074,11 @@ fail:
+     if (close_in)
+         ff_format_io_close(c->ctx, &in);
+     c->ctx->ctx_flags = c->ctx->ctx_flags & ~(unsigned)AVFMTCTX_UNSEEKABLE;
++    /* A loaded media playlist remains seekable even when it is open-ended.
++     * The old v1.1.5 condition marked Sorani's valid segment list
++     * AVFMTCTX_UNSEEKABLE and mpv surfaced that as Operation not permitted. */
+     if (!c->n_variants || !c->variants[0]->n_playlists ||
+-        !(c->variants[0]->playlists[0]->finished ||
+-          c->variants[0]->playlists[0]->type == PLS_TYPE_EVENT))
++        !c->variants[0]->playlists[0]->n_segments)
+         c->ctx->ctx_flags |= AVFMTCTX_UNSEEKABLE;
+     return ret;
+ }
+@@ -1609,6 +1619,8 @@ reload:
+         }
+         segment_retries = 0;
+         just_opened = 1;
++        if (v->first_read_seq_no < 0)
++            v->first_read_seq_no = v->cur_seq_no;
+     }
+ 
+     if (c->http_multiple == -1) {
+@@ -1732,8 +1744,12 @@ static int find_timestamp_in_playlist(HLSContext *c, struct playlist *pls,
+                   0 : c->first_timestamp;
+ 
+     if (timestamp < pos) {
++        /* A seek into the first segment is valid even when the first decoded
++         * packet established a slightly later timestamp baseline. */
+         *seq_no = pls->start_seq_no;
+-        return 0;
++        if (seg_start_ts)
++            *seg_start_ts = pos;
++        return 1;
+     }
+ 
+     for (i = 0; i < pls->n_segments; i++) {
+@@ -1750,6 +1766,13 @@ static int find_timestamp_in_playlist(HLSContext *c, struct playlist *pls,
+ 
+     *seq_no = pls->start_seq_no + pls->n_segments - 1;
+ 
++    /* An open-ended playlist may grow beyond the currently loaded window. */
++    if (!pls->finished && pls->n_segments > 0) {
++        if (seg_start_ts)
++            *seg_start_ts = pos - pls->segments[pls->n_segments - 1]->duration;
++        return 1;
++    }
++
+     return 0;
+ }
+ 
+@@ -1971,6 +1994,8 @@ static int hls_read_header(AVFormatContext *s)
+ 
+     c->first_packet = 1;
+     c->first_timestamp = AV_NOPTS_VALUE;
++    c->first_timestamp_pls = NULL;
++    c->first_timestamp_locked = 0;
+     c->cur_timestamp = AV_NOPTS_VALUE;
+     /* Kazumi: Initialize ad filtering state. */
+     c->last_main_pts = AV_NOPTS_VALUE;
+@@ -2315,11 +2340,13 @@ static int recheck_discard_flags(AVFormatContext *s, int first)
+             pls->needed = 1;
+             changed = 1;
+             pls->cur_seq_no = select_cur_seq_no(c, pls);
++            pls->first_read_seq_no = -1;
+             pls->pb.pub.eof_reached = 0;
+             if (c->cur_timestamp != AV_NOPTS_VALUE) {
+                 /* catch up */
+-                pls->seek_timestamp = c->cur_timestamp;
++                pls->seek_timestamp = c->cur_timestamp +
++                    (pls->ts_offset != AV_NOPTS_VALUE ? pls->ts_offset : 0);
+                 pls->seek_flags = AVSEEK_FLAG_ANY;
+                 pls->seek_stream_index = -1;
+             }
+             av_log(s, AV_LOG_INFO, "Now receiving playlist %d, segment %"PRId64"\n", i, pls->cur_seq_no);
+@@ -2407,10 +2434,58 @@ static int hls_read_packet(AVFormatContext *s, AVPacket *pkt)
+                         fill_timing_for_id3_timestamped_stream(pls);
+                     }
+ 
+-                    if (c->first_timestamp == AV_NOPTS_VALUE &&
+-                        pls->pkt->dts       != AV_NOPTS_VALUE)
+-                        c->first_timestamp = av_rescale_q(pls->pkt->dts,
+-                            get_timebase(pls), AV_TIME_BASE_Q);
++                    if (pls->pkt->dts != AV_NOPTS_VALUE &&
++                        (pls->ts_offset == AV_NOPTS_VALUE ||
++                         (!c->first_timestamp_locked &&
++                          c->first_timestamp_pls == pls &&
++                          pls->cur_seq_no <= pls->first_read_seq_no + 1))) {
++                        int adjusted = 0;
++                        /* Rebase the first packet onto the beginning of the
++                         * HLS segment timeline. FFmpeg 6 otherwise keeps the
++                         * MPEG-TS/PES timestamp from a later wrapped segment,
++                         * leaving a gap before the first cache range. */
++                        int64_t seg_idx = pls->first_read_seq_no - pls->start_seq_no;
++                        int64_t ts = av_rescale_q(pls->pkt->pts != AV_NOPTS_VALUE ?
++                                                  pls->pkt->pts : pls->pkt->dts,
++                                                  get_timebase(pls), AV_TIME_BASE_Q);
++
++                        for (int64_t k = 0; k < seg_idx && k < pls->n_segments; k++)
++                            ts -= pls->segments[k]->duration;
++
++                        if (c->first_timestamp == AV_NOPTS_VALUE) {
++                            c->first_timestamp = ts;
++                            c->first_timestamp_pls = pls;
++                            adjusted = 1;
++                        } else if (c->first_timestamp_pls == pls) {
++                            /* The first packet in mux order may belong to a
++                             * different stream than the earliest packet in
++                             * this segment. Lower the baseline while the
++                             * initial segment is still being read. */
++                            int64_t delta = c->first_timestamp - ts;
++
++                            if (delta > 0 && delta <= pls->target_duration) {
++                                c->first_timestamp = ts;
++                                for (int k = 0; k < c->n_playlists; k++)
++                                    if (c->playlists[k]->ts_offset != AV_NOPTS_VALUE)
++                                        c->playlists[k]->ts_offset += delta;
++                                adjusted = 1;
++                            }
++                        }
++
++                        if (pls->ts_offset == AV_NOPTS_VALUE)
++                            pls->ts_offset = ts - c->first_timestamp;
++
++                        if (adjusted) {
++                            for (unsigned k = 0; k < s->nb_streams; k++)
++                                s->streams[k]->start_time =
++                                    av_rescale_q(c->first_timestamp,
++                                                 AV_TIME_BASE_Q,
++                                                 s->streams[k]->time_base);
++                            av_log(s, AV_LOG_DEBUG,
++                                   "First timestamp %"PRId64" from playlist %d\n",
++                                   c->first_timestamp, pls->index);
++                        }
++                    }
+                 }
+ 
+                 seg = current_segment(pls);
+@@ -2653,9 +2728,9 @@ static int hls_read_seek(AVFormatContext *s, int stream_index,
+     first_timestamp = c->first_timestamp == AV_NOPTS_VALUE ?
+                       0 : c->first_timestamp;
+ 
+-    seek_timestamp = av_rescale_rnd(timestamp, AV_TIME_BASE,
+-                                    s->streams[stream_index]->time_base.den,
+-                                    AV_ROUND_DOWN);
++    seek_timestamp = av_rescale_q_rnd(timestamp,
++                                      s->streams[stream_index]->time_base,
++                                      AV_TIME_BASE_Q, AV_ROUND_DOWN);
+ 
+     duration = s->duration == AV_NOPTS_VALUE ?
+                0 : s->duration;
+@@ -2686,6 +2761,11 @@ static int hls_read_seek(AVFormatContext *s, int stream_index,
+         seek_timestamp = seg_start_ts;
+     }
+ 
++    /* Keep the first timestamp baseline fixed after the first explicit seek.
++     * This prevents a later playlist from moving the origin and making an
++     * early progress-bar seek appear outside the loaded range. */
++    c->first_timestamp_locked = 1;
++
+     /* set segment now so we do not need to search again below */
+     seek_pls->cur_seq_no = seq_no;
+     seek_pls->seek_stream_index = stream_subdemuxer_index;
+@@ -2696,6 +2776,7 @@ static int hls_read_seek(AVFormatContext *s, int stream_index,
+         AVIOContext *const pb = &pls->pb.pub;
+         ff_format_io_close(pls->parent, &pls->input);
+         pls->input_read_done = 0;
++        pls->first_read_seq_no = -1;
+         ff_format_io_close(pls->parent, &pls->input_next);
+         pls->input_next_requested = 0;
+         av_packet_unref(pls->pkt);
+@@ -2707,9 +2788,23 @@ static int hls_read_seek(AVFormatContext *s, int stream_index,
+         /* Flush the packet queue of the subdemuxer. */
+         ff_read_frame_flush(pls->ctx);
+ 
+-        pls->seek_timestamp = seek_timestamp;
++        if (pls->ts_offset != AV_NOPTS_VALUE)
++            pls->seek_timestamp = seek_timestamp + pls->ts_offset;
++        else
++            pls->seek_timestamp = seek_timestamp;
+         pls->seek_flags = flags;
+ 
++        if (pls == seek_pls &&
++            s->streams[stream_index]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO &&
++            flags & AVSEEK_FLAG_BACKWARD && !(flags & AVSEEK_FLAG_ANY)) {
++            /* The first keyframe can precede EXTINF-derived seg_start_ts by
++             * one segment duration. Keep it eligible instead of landing on
++             * the following segment. */
++            int64_t idx = seq_no - pls->start_seq_no;
++            if (idx >= 0 && idx < pls->n_segments)
++                pls->seek_timestamp -= pls->segments[idx]->duration;
++        }
++
+         if (pls != seek_pls) {
+             /* set closest segment seq_no for playlists not handled above */
+             find_timestamp_in_playlist(c, pls, seek_timestamp, &pls->cur_seq_no, NULL);
+
