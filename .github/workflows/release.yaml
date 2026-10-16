@@ -87,7 +87,7 @@ jobs:
           cp "$GITHUB_WORKSPACE/tools/libmpv_v115_hls_pts_offset.patch" \
             buildscripts/patches/ffmpeg/ffmpeg-hls-z-2687-pts-offset.patch
           cp "$GITHUB_WORKSPACE/tools/libmpv_v115_hls_timeline.patch" \
-            buildscripts/patches/ffmpeg/ffmpeg-hls-z-2687-timeline.patch
+            buildscripts/patches/ffmpeg/zz-ffmpeg-hls-z-2687-timeline.patch
           cd buildscripts
           ./download.sh
           ./patch.sh

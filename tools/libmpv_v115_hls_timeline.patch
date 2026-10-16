@@ -1,5 +1,5 @@
 diff --git a/libavformat/hls.c b/libavformat/hls.c
-index eb31a304..a50a3a28 100644
+index 186db1c1..901dbb63 100644
 --- a/libavformat/hls.c
 +++ b/libavformat/hls.c
 @@ -130,6 +130,8 @@ struct playlist {
@@ -63,7 +63,7 @@ index eb31a304..a50a3a28 100644
          c->ctx->ctx_flags |= AVFMTCTX_UNSEEKABLE;
      return ret;
  }
-@@ -1609,6 +1619,8 @@ reload:
+@@ -1609,6 +1621,8 @@ reload:
          }
          segment_retries = 0;
          just_opened = 1;
@@ -72,7 +72,7 @@ index eb31a304..a50a3a28 100644
      }
  
      if (c->http_multiple == -1) {
-@@ -1732,8 +1744,12 @@ static int find_timestamp_in_playlist(HLSContext *c, struct playlist *pls,
+@@ -1732,8 +1746,12 @@ static int find_timestamp_in_playlist(HLSContext *c, struct playlist *pls,
                    0 : c->first_timestamp;
  
      if (timestamp < pos) {
@@ -86,7 +86,7 @@ index eb31a304..a50a3a28 100644
      }
  
      for (i = 0; i < pls->n_segments; i++) {
-@@ -1750,6 +1766,13 @@ static int find_timestamp_in_playlist(HLSContext *c, struct playlist *pls,
+@@ -1750,6 +1768,13 @@ static int find_timestamp_in_playlist(HLSContext *c, struct playlist *pls,
  
      *seq_no = pls->start_seq_no + pls->n_segments - 1;
  
@@ -100,7 +100,7 @@ index eb31a304..a50a3a28 100644
      return 0;
  }
  
-@@ -1971,6 +1994,8 @@ static int hls_read_header(AVFormatContext *s)
+@@ -1971,6 +1996,8 @@ static int hls_read_header(AVFormatContext *s)
  
      c->first_packet = 1;
      c->first_timestamp = AV_NOPTS_VALUE;
@@ -109,7 +109,7 @@ index eb31a304..a50a3a28 100644
      c->cur_timestamp = AV_NOPTS_VALUE;
      /* Kazumi: Initialize ad filtering state. */
      c->last_main_pts = AV_NOPTS_VALUE;
-@@ -2315,11 +2340,13 @@ static int recheck_discard_flags(AVFormatContext *s, int first)
+@@ -2315,10 +2342,12 @@ static int recheck_discard_flags(AVFormatContext *s, int first)
              pls->needed = 1;
              changed = 1;
              pls->cur_seq_no = select_cur_seq_no(c, pls);
@@ -123,8 +123,7 @@ index eb31a304..a50a3a28 100644
                  pls->seek_flags = AVSEEK_FLAG_ANY;
                  pls->seek_stream_index = -1;
              }
-             av_log(s, AV_LOG_INFO, "Now receiving playlist %d, segment %"PRId64"\n", i, pls->cur_seq_no);
-@@ -2407,10 +2434,58 @@ static int hls_read_packet(AVFormatContext *s, AVPacket *pkt)
+@@ -2407,10 +2436,58 @@ static int hls_read_packet(AVFormatContext *s, AVPacket *pkt)
                          fill_timing_for_id3_timestamped_stream(pls);
                      }
  
@@ -187,7 +186,7 @@ index eb31a304..a50a3a28 100644
                  }
  
                  seg = current_segment(pls);
-@@ -2653,9 +2728,9 @@ static int hls_read_seek(AVFormatContext *s, int stream_index,
+@@ -2653,9 +2730,9 @@ static int hls_read_seek(AVFormatContext *s, int stream_index,
      first_timestamp = c->first_timestamp == AV_NOPTS_VALUE ?
                        0 : c->first_timestamp;
  
@@ -200,7 +199,7 @@ index eb31a304..a50a3a28 100644
  
      duration = s->duration == AV_NOPTS_VALUE ?
                 0 : s->duration;
-@@ -2686,6 +2761,11 @@ static int hls_read_seek(AVFormatContext *s, int stream_index,
+@@ -2686,6 +2763,11 @@ static int hls_read_seek(AVFormatContext *s, int stream_index,
          seek_timestamp = seg_start_ts;
      }
  
@@ -212,7 +211,7 @@ index eb31a304..a50a3a28 100644
      /* set segment now so we do not need to search again below */
      seek_pls->cur_seq_no = seq_no;
      seek_pls->seek_stream_index = stream_subdemuxer_index;
-@@ -2696,6 +2776,7 @@ static int hls_read_seek(AVFormatContext *s, int stream_index,
+@@ -2696,6 +2778,7 @@ static int hls_read_seek(AVFormatContext *s, int stream_index,
          AVIOContext *const pb = &pls->pb.pub;
          ff_format_io_close(pls->parent, &pls->input);
          pls->input_read_done = 0;
@@ -220,9 +219,9 @@ index eb31a304..a50a3a28 100644
          ff_format_io_close(pls->parent, &pls->input_next);
          pls->input_next_requested = 0;
          av_packet_unref(pls->pkt);
-@@ -2707,9 +2788,23 @@ static int hls_read_seek(AVFormatContext *s, int stream_index,
-         /* Flush the packet queue of the subdemuxer. */
-         ff_read_frame_flush(pls->ctx);
+@@ -2710,9 +2793,23 @@ static int hls_read_seek(AVFormatContext *s, int stream_index,
+         /* Reset the init segment so it's re-fetched and served appropiately */
+         pls->cur_init_section = NULL;
  
 -        pls->seek_timestamp = seek_timestamp;
 +        if (pls->ts_offset != AV_NOPTS_VALUE)
@@ -245,4 +244,3 @@ index eb31a304..a50a3a28 100644
          if (pls != seek_pls) {
              /* set closest segment seq_no for playlists not handled above */
              find_timestamp_in_playlist(c, pls, seek_timestamp, &pls->cur_seq_no, NULL);
-
