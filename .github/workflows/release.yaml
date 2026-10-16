@@ -83,7 +83,7 @@ jobs:
           git fetch --depth 1 origin refs/tags/v1.3.0:refs/tags/v1.3.0
           git checkout --detach refs/tags/v1.3.0
           sed -i 's/local apilvl=26/local apilvl=21/' buildscripts/build.sh
-          sed -i 's/-Dvulkan=enabled/-Dvulkan=disabled -Dlibplacebo=disabled/' buildscripts/scripts/mpv.sh
+          sed -i 's/-Dvulkan=enabled/-Dvulkan=disabled/' buildscripts/scripts/mpv.sh
           cd buildscripts
           ./download.sh
           ./patch.sh
