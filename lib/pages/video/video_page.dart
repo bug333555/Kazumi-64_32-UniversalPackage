@@ -8,6 +8,7 @@ import 'package:kazumi/pages/video/video_playback_args.dart';
 import 'package:kazumi/pages/history/history_controller.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/pages/player/player_item.dart';
+import 'package:kazumi/pages/player/danmaku_destination_sheet.dart';
 import 'package:flutter_mobx/flutter_mobx.dart';
 import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/services/player/pip_utils.dart';
@@ -891,16 +892,12 @@ class _VideoPageState extends State<VideoPage>
               : PlayerItem(
                   playerController: playerController,
                   videoPageController: videoPageController,
-                  toggleMenu: _toggleTabBodyAnimated,
-                  showMenuImmediately: _showTabBodyImmediately,
-                  hideMenuImmediately: _hideTabBodyImmediately,
+                  fillsWindow: isLandscape,
+                  onToggleSidePanel: _toggleTabBodyAnimated,
                   changeEpisode: changeEpisode,
-                  onBackPressed: onBackPressed,
+                  onBackPressed: () => onBackPressed(context),
                   keyboardFocus: keyboardFocus,
-                  sendDanmaku: sendDanmaku,
                   disableAnimations: disableAnimations,
-                  showDanmakuDestinationPickerAndSend:
-                      showDanmakuDestinationPickerAndSend,
                   pauseForTimedShutdown: pauseForTimedShutdown,
                 ),
         ),
