@@ -7,11 +7,7 @@ import 'package:kazumi/services/plugin/rule_engine_models.dart';
 import 'package:kazumi/utils/episode_url.dart';
 import 'package:xpath_selector_html_parser/xpath_selector_html_parser.dart';
 
-enum XPathRuleFormatKind {
-  invalidUrl,
-  invalidDocument,
-  invalidSelector,
-}
+enum XPathRuleFormatKind { invalidUrl, invalidDocument, invalidSelector }
 
 enum XPathRuleField {
   searchList,
@@ -40,7 +36,8 @@ class XPathRuleFormatException implements Exception {
   final Object? cause;
 
   @override
-  String toString() => 'XPathRuleFormatException.${kind.name}: $message'
+  String toString() =>
+      'XPathRuleFormatException.${kind.name}: $message'
       '${cause == null ? '' : ' ($cause)'}';
 }
 
@@ -90,15 +87,30 @@ class XPathRuleStrategy {
         kind: XPathRuleFormatKind.invalidUrl,
       );
     }
-    // XPath chapter requests historically go out without stored cookies;
-    // only search requests attach them.
-    return PreparedRuleRequest(method: 'GET', url: url);
+    // A verified anti-crawler session belongs to the plugin's site. Attach
+    // its cookie/UA pair only for the same host or a subdomain relationship;
+    // chapter URLs pointing at an unrelated CDN must not receive the cookie.
+    final baseUri = Uri.tryParse(config.baseUrl);
+    final includeCookies = baseUri != null && _isSameSite(baseUri, uri);
+    return PreparedRuleRequest(
+      method: 'GET',
+      url: url,
+      includeCookies: includeCookies,
+    );
   }
 
-  RuleSearchParseResult parseSearch(
-    String raw,
-    RuleExecutionConfig config,
-  ) {
+  bool _isSameSite(Uri base, Uri target) {
+    final baseHost = base.host.toLowerCase().trim();
+    final targetHost = target.host.toLowerCase().trim();
+    if (baseHost.isEmpty || targetHost.isEmpty) return false;
+    if (baseHost == targetHost) return true;
+    // Avoid guessing registrable domains for IP literals and unusual hosts.
+    if (baseHost.contains(':') || targetHost.contains(':')) return false;
+    return targetHost.endsWith('.$baseHost') ||
+        baseHost.endsWith('.$targetHost');
+  }
+
+  RuleSearchParseResult parseSearch(String raw, RuleExecutionConfig config) {
     final root = _documentElement(raw);
     if (detectsCaptchaChallenge(
       raw,
@@ -119,13 +131,15 @@ class XPathRuleStrategy {
     for (var index = 0; index < nodes.length; index++) {
       final node = nodes[index];
       try {
-        final name = _runSelector(
+        final name =
+            _runSelector(
               XPathRuleField.searchName,
               config.searchName,
               () => node.queryXPath(config.searchName).node,
             )?.text?.trim() ??
             '';
-        final source = _runSelector(
+        final source =
+            _runSelector(
               XPathRuleField.searchResult,
               config.searchResult,
               () => node.queryXPath(config.searchResult).node,
@@ -150,10 +164,7 @@ class XPathRuleStrategy {
     );
   }
 
-  RuleChapterParseResult parseChapters(
-    String raw,
-    RuleExecutionConfig config,
-  ) {
+  RuleChapterParseResult parseChapters(String raw, RuleExecutionConfig config) {
     final root = _documentElement(raw);
     final roads = <Road>[];
     final diagnostics = <String>[];
@@ -172,25 +183,23 @@ class XPathRuleStrategy {
           config.chapterResult,
           () => roadNode.queryXPath(config.chapterResult).nodes,
         );
-        for (var episodeIndex = 0;
-            episodeIndex < episodeNodes.length;
-            episodeIndex++) {
+        for (
+          var episodeIndex = 0;
+          episodeIndex < episodeNodes.length;
+          episodeIndex++
+        ) {
           try {
             final episode = episodeNodes[episodeIndex].node;
             final source = episode.attributes['href']?.trim() ?? '';
             if (source.isEmpty) {
-              diagnostics.add(
-                '线路 $roadIndex 的剧集节点 $episodeIndex 缺少 URL，已跳过',
-              );
+              diagnostics.add('线路 $roadIndex 的剧集节点 $episodeIndex 缺少 URL，已跳过');
               continue;
             }
             final name = (episode.text ?? '').replaceAll(RegExp(r'\s+'), '');
             urls.add(normalizeEpisodeUrl(config.baseUrl, source));
             names.add(name.isEmpty ? '第${episodeIndex + 1}集' : name);
           } catch (error) {
-            diagnostics.add(
-              '线路 $roadIndex 的剧集节点 $episodeIndex 解析失败: $error',
-            );
+            diagnostics.add('线路 $roadIndex 的剧集节点 $episodeIndex 解析失败: $error');
           }
         }
         if (urls.isEmpty) {
@@ -198,11 +207,7 @@ class XPathRuleStrategy {
           continue;
         }
         roads.add(
-          Road(
-            name: '播放线路${roads.length + 1}',
-            data: urls,
-            identifier: names,
-          ),
+          Road(name: '播放线路${roads.length + 1}', data: urls, identifier: names),
         );
       } on XPathRuleFormatException {
         rethrow;
@@ -210,10 +215,7 @@ class XPathRuleStrategy {
         diagnostics.add('线路节点 $roadIndex 解析失败: $error');
       }
     }
-    return RuleChapterParseResult(
-      roads: roads,
-      diagnostics: diagnostics,
-    );
+    return RuleChapterParseResult(roads: roads, diagnostics: diagnostics);
   }
 
   bool detectsCaptchaChallenge(

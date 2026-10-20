@@ -44,7 +44,8 @@ class ChapterErrorException implements Exception {
   final Object? cause;
 
   @override
-  String toString() => 'ChapterErrorException: $pluginName chapter query failed'
+  String toString() =>
+      'ChapterErrorException: $pluginName chapter query failed'
       '${cause != null ? ' ($cause)' : ''}';
 }
 
@@ -104,8 +105,9 @@ class PreparedRuleRequest {
   final String bodyType;
   final Object? body;
 
-  /// Whether stored plugin cookies are attached to the request. Historically
-  /// only search and API requests send cookies; XPath chapter requests do not.
+  /// Whether stored plugin cookies are attached to the request. XPath chapter
+  /// requests set this only for a same-site URL; the request executor sends
+  /// the matching plugin User-Agent with the cookie.
   final bool includeCookies;
 }
 

@@ -69,25 +69,66 @@ void main() {
     }
   }
 
-  test('API search never turns a non-JSON captcha page into captcha flow',
-      () async {
-    final engine = RuleEngine(
-      requestExecutor: _FakeExecutor(['<html>captcha</html>']),
-      logFailures: false,
+  test('XPath chapter request carries cookies for the plugin host', () {
+    final request = const XPathRuleStrategy().prepareChapterRequest(
+      _config(
+        searchMode: RuleMode.xpath,
+        chapterMode: RuleMode.xpath,
+        baseUrl: 'https://hanime1.me/',
+      ),
+      '/watch/episode-1',
     );
 
-    await expectLater(
-      engine.search(
-        _config(
-          searchMode: RuleMode.api,
-          chapterMode: RuleMode.xpath,
-          antiCrawler: _antiCrawler(),
-        ),
-        'keyword',
-      ),
-      throwsA(isA<SearchErrorException>()),
-    );
+    expect(request.includeCookies, isTrue);
   });
+
+  test('XPath chapter request carries cookies for a plugin subdomain', () {
+    final request = const XPathRuleStrategy().prepareChapterRequest(
+      _config(
+        searchMode: RuleMode.xpath,
+        chapterMode: RuleMode.xpath,
+        baseUrl: 'https://hanime1.me/',
+      ),
+      'https://video.hanime1.me/watch/episode-1',
+    );
+
+    expect(request.includeCookies, isTrue);
+  });
+
+  test('XPath chapter request rejects unrelated hosts for cookies', () {
+    final request = const XPathRuleStrategy().prepareChapterRequest(
+      _config(
+        searchMode: RuleMode.xpath,
+        chapterMode: RuleMode.xpath,
+        baseUrl: 'https://hanime1.me/',
+      ),
+      'https://cdn.example.net/watch/episode-1',
+    );
+
+    expect(request.includeCookies, isFalse);
+  });
+
+  test(
+    'API search never turns a non-JSON captcha page into captcha flow',
+    () async {
+      final engine = RuleEngine(
+        requestExecutor: _FakeExecutor(['<html>captcha</html>']),
+        logFailures: false,
+      );
+
+      await expectLater(
+        engine.search(
+          _config(
+            searchMode: RuleMode.api,
+            chapterMode: RuleMode.xpath,
+            antiCrawler: _antiCrawler(),
+          ),
+          'keyword',
+        ),
+        throwsA(isA<SearchErrorException>()),
+      );
+    },
+  );
 
   test('maps an empty relative search XPath to a typed parse error', () async {
     final engine = RuleEngine(
@@ -106,20 +147,20 @@ void main() {
       ),
       throwsA(
         isA<SearchErrorException>().having(
-              (error) => error.cause,
-              'cause',
-              isA<XPathRuleFormatException>()
-                  .having(
-                    (error) => error.kind,
-                    'kind',
-                    XPathRuleFormatKind.invalidSelector,
-                  )
-                  .having(
-                    (error) => error.field,
-                    'field',
-                    XPathRuleField.searchName,
-                  ),
-            ),
+          (error) => error.cause,
+          'cause',
+          isA<XPathRuleFormatException>()
+              .having(
+                (error) => error.kind,
+                'kind',
+                XPathRuleFormatKind.invalidSelector,
+              )
+              .having(
+                (error) => error.field,
+                'field',
+                XPathRuleField.searchName,
+              ),
+        ),
       ),
     );
   });
@@ -141,20 +182,20 @@ void main() {
       ),
       throwsA(
         isA<ChapterErrorException>().having(
-              (error) => error.cause,
-              'cause',
-              isA<XPathRuleFormatException>()
-                  .having(
-                    (error) => error.kind,
-                    'kind',
-                    XPathRuleFormatKind.invalidSelector,
-                  )
-                  .having(
-                    (error) => error.field,
-                    'field',
-                    XPathRuleField.chapterResult,
-                  ),
-            ),
+          (error) => error.cause,
+          'cause',
+          isA<XPathRuleFormatException>()
+              .having(
+                (error) => error.kind,
+                'kind',
+                XPathRuleFormatKind.invalidSelector,
+              )
+              .having(
+                (error) => error.field,
+                'field',
+                XPathRuleField.chapterResult,
+              ),
+        ),
       ),
     );
   });
@@ -180,10 +221,7 @@ void main() {
 
   test('wraps request failures in a search error', () async {
     final engine = RuleEngine(
-      requestExecutor: _FakeExecutor(
-        const [],
-        error: StateError('offline'),
-      ),
+      requestExecutor: _FakeExecutor(const [], error: StateError('offline')),
       logFailures: false,
     );
 
@@ -193,8 +231,11 @@ void main() {
         'keyword',
       ),
       throwsA(
-        isA<SearchErrorException>()
-            .having((error) => error.cause, 'cause', isA<StateError>()),
+        isA<SearchErrorException>().having(
+          (error) => error.cause,
+          'cause',
+          isA<StateError>(),
+        ),
       ),
     );
   });
@@ -227,7 +268,9 @@ void main() {
         const [],
         error: _badResponse(
           '',
-          headers: {'cf-mitigated': ['challenge']},
+          headers: {
+            'cf-mitigated': ['challenge'],
+          },
         ),
       ),
       logFailures: false,
@@ -268,28 +311,30 @@ void main() {
     );
   });
 
-  test('API search does not turn failed challenge response into captcha flow',
-      () async {
-    final engine = RuleEngine(
-      requestExecutor: _FakeExecutor(
-        const [],
-        error: _badResponse('<html>captcha</html>'),
-      ),
-      logFailures: false,
-    );
-
-    await expectLater(
-      engine.search(
-        _config(
-          searchMode: RuleMode.api,
-          chapterMode: RuleMode.xpath,
-          antiCrawler: _antiCrawler(),
+  test(
+    'API search does not turn failed challenge response into captcha flow',
+    () async {
+      final engine = RuleEngine(
+        requestExecutor: _FakeExecutor(
+          const [],
+          error: _badResponse('<html>captcha</html>'),
         ),
-        'keyword',
-      ),
-      throwsA(isA<SearchErrorException>()),
-    );
-  });
+        logFailures: false,
+      );
+
+      await expectLater(
+        engine.search(
+          _config(
+            searchMode: RuleMode.api,
+            chapterMode: RuleMode.xpath,
+            antiCrawler: _antiCrawler(),
+          ),
+          'keyword',
+        ),
+        throwsA(isA<SearchErrorException>()),
+      );
+    },
+  );
 
   test('propagates cancellation without wrapping it', () async {
     const cancellation = NetworkException(
@@ -339,7 +384,7 @@ NetworkException _badResponse(
 
 class _FakeExecutor implements RuleRequestExecutor {
   _FakeExecutor(List<String> responses, {this.error})
-      : _responses = List<String>.of(responses);
+    : _responses = List<String>.of(responses);
 
   final List<String> _responses;
   final Object? error;
@@ -361,12 +406,13 @@ RuleExecutionConfig _config({
   required String searchMode,
   required String chapterMode,
   AntiCrawlerConfig? antiCrawler,
+  String baseUrl = 'https://example.com/',
   String searchName = '//h2/a',
   String chapterResult = '//a',
 }) {
   return RuleExecutionConfig(
     pluginName: 'runtime-test',
-    baseUrl: 'https://example.com/',
+    baseUrl: baseUrl,
     usePost: false,
     searchMode: searchMode,
     chapterMode: chapterMode,
@@ -386,9 +432,7 @@ RuleExecutionConfig _config({
       sourcePath: r'$.id',
     ),
     chapterApiConfig: ApiChapterConfig(
-      request: ApiRequestConfig(
-        url: 'https://example.com/api/videos/@source',
-      ),
+      request: ApiRequestConfig(url: 'https://example.com/api/videos/@source'),
       roadsPath: r'$.data.roads[*]',
       roadNamePath: r'$.name',
       episodesPath: r'$.episodes[*]',

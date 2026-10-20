@@ -1,0 +1,147 @@
+name: Kazumi 2.3.9 UI compatibility trial
+
+on:
+  push:
+    branches:
+      - codex/kazumi-2.3.9-ui-compat-trial
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DANDANAPI_APPID: ${{ secrets.DANDANAPI_APPID }}
+  DANDANAPI_KEY: ${{ secrets.DANDANAPI_KEY }}
+  KAZUMI_APPID: ${{ secrets.KAZUMI_APPID }}
+  KAZUMI_KEY: ${{ secrets.KAZUMI_KEY }}
+
+jobs:
+  trial-android:
+    name: Build signed universal ARM trial APK
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v4
+
+      - name: Install Android build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build libgtk-3-dev libayatana-appindicator3-dev libasound2-dev
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: temurin
+
+      - name: Set up Flutter 3.47.7
+        uses: subosito/flutter-action@v2.16.0
+        with:
+          channel: stable
+          flutter-version: 3.47.7
+
+      - name: Get Flutter dependencies
+        run: flutter pub get
+
+      - name: Run focused regression tests
+        run: flutter test test/rule_engine_test.dart
+
+      - name: Analyze Dart sources
+        run: flutter analyze --no-fatal-infos --fatal-warnings
+
+      - name: Build universal APK
+        run: >-
+          flutter build apk --release
+          --build-name=2.3.9
+          --build-number=20309
+          --dart-define=DANDANAPI_APPID=$DANDANAPI_APPID
+          --dart-define=DANDANAPI_KEY=$DANDANAPI_KEY
+          --dart-define=KAZUMI_APPID=$KAZUMI_APPID
+          --dart-define=KAZUMI_KEY=$KAZUMI_KEY
+
+      - name: Replace ARM native libraries with validated v1.1.5/API21 set
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+
+          apk = Path('build/app/outputs/flutter-apk/app-release.apk')
+          replacements = {
+              'lib/arm64-v8a/libmpv.so': Path('trial_assets/native/arm64-v8a/libmpv.so'),
+              'lib/arm64-v8a/libmediakitandroidhelper.so': Path('trial_assets/native/arm64-v8a/libmediakitandroidhelper.so'),
+              'lib/armeabi-v7a/libmpv.so': Path('trial_assets/native/armeabi-v7a/libmpv.so'),
+              'lib/armeabi-v7a/libmediakitandroidhelper.so': Path('trial_assets/native/armeabi-v7a/libmediakitandroidhelper.so'),
+          }
+          temp = apk.with_suffix('.swapped.apk')
+          with zipfile.ZipFile(apk, 'r') as source, zipfile.ZipFile(temp, 'w', zipfile.ZIP_DEFLATED) as target:
+              for info in source.infolist():
+                  if info.filename not in replacements:
+                      target.writestr(info, source.read(info.filename))
+              for name, path in replacements.items():
+                  target.write(path, name)
+          temp.replace(apk)
+          PY
+
+      - name: Verify universal APK contents
+        run: |
+          mkdir -p build/unsigned build/metadata
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, zipfile
+
+          apk = Path('build/app/outputs/flutter-apk/app-release.apk')
+          expected = {
+              'lib/arm64-v8a/libmpv.so': '087ec82b44ef8628b6d40c9bf9366bed568681aeb006704488b8760caaa02be0',
+              'lib/arm64-v8a/libmediakitandroidhelper.so': 'a6862031015e390aa8a64536411132cf4df6a5a9dcf782f0d68b995380a1cccb',
+              'lib/armeabi-v7a/libmpv.so': '6fe82d0619cfb3afc5781626939cafdbacf6e12640b790c797e652c020d80a22',
+              'lib/armeabi-v7a/libmediakitandroidhelper.so': '698ce761945a3bdaf6ffe690e715fc510bc30a3571c5ac6768a734847232d5cc',
+          }
+          with zipfile.ZipFile(apk) as z:
+              names = set(z.namelist())
+              for name, digest in expected.items():
+                  if name not in names:
+                      raise SystemExit(f'missing {name}')
+                  actual = hashlib.sha256(z.read(name)).hexdigest()
+                  if actual != digest:
+                      raise SystemExit(f'{name}: {actual} != {digest}')
+          print('ARM native library hashes verified')
+          PY
+          cp build/app/outputs/flutter-apk/app-release.apk build/unsigned/Kazumi-2.3.9-ui-compat-trial-unsigned.apk
+
+      - name: Sign trial APK with repository release key
+        id: sign_app
+        uses: filippoLeporati93/android-release-signer@v1
+        with:
+          releaseDirectory: build/unsigned
+          signingKeyBase64: ${{ secrets.SIGNING_KEY_BASE64 }}
+          alias: ${{ secrets.KEY_ALIAS }}
+          keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
+        env:
+          BUILD_TOOLS_VERSION: '34.0.0'
+
+      - name: Prepare trial artifact and manifest
+        run: |
+          mkdir -p build/trial
+          cp "${{ steps.sign_app.outputs.signedReleaseFile }}" build/trial/Kazumi-2.3.9-ui-compat-trial.apk
+          sha256sum build/trial/Kazumi-2.3.9-ui-compat-trial.apk > build/trial/SHA256SUMS.txt
+          printf '%s\n' \
+            'source version: 2.3.9+20309' \
+            'package: com.predidit.kazumi' \
+            'artifact: Kazumi-2.3.9-ui-compat-trial.apk' \
+            'build type: local trial branch GitHub Actions artifact; no Release created' \
+            'UI: restored compact 2.2.0 video details/episode selector' \
+            'XPath chapter cookies: same-site host/subdomain only (#2734)' \
+            'ARM native set: validated v1.1.5/API21 libmpv + helper for arm64-v8a and armeabi-v7a' \
+            'test: flutter test test/rule_engine_test.dart' \
+            'analyze: flutter analyze --no-fatal-infos --fatal-warnings' \
+            'ABI verification: arm64-v8a and armeabi-v7a entries present and hash-checked' \
+            > build/trial/BUILD-MANIFEST.txt
+
+      - name: Upload trial APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: kazumi-2.3.9-ui-compat-trial
+          path: build/trial
+          if-no-files-found: error
