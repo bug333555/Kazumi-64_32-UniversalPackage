@@ -84,6 +84,14 @@ jobs:
           temp.replace(apk)
           PY
 
+      - name: Zipalign unsigned APK after native library replacement
+        run: |
+          zipalign -f -p 4 \
+            build/app/outputs/flutter-apk/app-release.apk \
+            build/app/outputs/flutter-apk/app-release-aligned.apk
+          mv build/app/outputs/flutter-apk/app-release-aligned.apk \
+             build/app/outputs/flutter-apk/app-release.apk
+
       - name: Verify universal APK contents
         run: |
           mkdir -p build/unsigned build/metadata
