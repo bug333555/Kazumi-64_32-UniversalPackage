@@ -86,7 +86,7 @@ jobs:
 
       - name: Zipalign unsigned APK after native library replacement
         run: |
-          zipalign -f -p 4 \
+          "$ANDROID_HOME/build-tools/34.0.0/zipalign" -f -p 4 \
             build/app/outputs/flutter-apk/app-release.apk \
             build/app/outputs/flutter-apk/app-release-aligned.apk
           mv build/app/outputs/flutter-apk/app-release-aligned.apk \
