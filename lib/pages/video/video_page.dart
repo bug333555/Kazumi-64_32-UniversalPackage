@@ -892,7 +892,9 @@ class _VideoPageState extends State<VideoPage>
               : PlayerItem(
                   playerController: playerController,
                   videoPageController: videoPageController,
-                  fillsWindow: isLandscape,
+                  fillsWindow:
+                      MediaQuery.sizeOf(context).width >
+                      MediaQuery.sizeOf(context).height,
                   onToggleSidePanel: _toggleTabBodyAnimated,
                   changeEpisode: changeEpisode,
                   onBackPressed: () => onBackPressed(context),
