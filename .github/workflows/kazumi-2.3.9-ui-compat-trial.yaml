@@ -118,27 +118,33 @@ jobs:
           PY
           cp build/app/outputs/flutter-apk/app-release.apk build/unsigned/Kazumi-2.3.9-ui-compat-trial-unsigned.apk
 
-      - name: Sign trial APK with repository release key
-        id: sign_app
-        uses: filippoLeporati93/android-release-signer@v1
-        with:
-          releaseDirectory: build/unsigned
-          signingKeyBase64: ${{ secrets.SIGNING_KEY_BASE64 }}
-          alias: ${{ secrets.KEY_ALIAS }}
-          keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
-        env:
-          BUILD_TOOLS_VERSION: '34.0.0'
+      - name: Sign trial APK with ephemeral test key
+        run: |
+          mkdir -p build/trial
+          keytool -genkeypair -v \
+            -keystore build/trial/trial-signing.jks \
+            -storepass android -keypass android \
+            -alias kazumi-trial \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname 'CN=Kazumi UI trial, O=bug333555, C=CN'
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" sign \
+            --ks build/trial/trial-signing.jks \
+            --ks-key-alias kazumi-trial \
+            --ks-pass pass:android --key-pass pass:android \
+            --out build/trial/Kazumi-2.3.9-ui-compat-trial.apk \
+            build/unsigned/Kazumi-2.3.9-ui-compat-trial-unsigned.apk
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose \
+            --print-certs build/trial/Kazumi-2.3.9-ui-compat-trial.apk
 
       - name: Prepare trial artifact and manifest
         run: |
-          mkdir -p build/trial
-          cp "${{ steps.sign_app.outputs.signedReleaseFile }}" build/trial/Kazumi-2.3.9-ui-compat-trial.apk
           sha256sum build/trial/Kazumi-2.3.9-ui-compat-trial.apk > build/trial/SHA256SUMS.txt
           printf '%s\n' \
             'source version: 2.3.9+20309' \
             'package: com.predidit.kazumi' \
             'artifact: Kazumi-2.3.9-ui-compat-trial.apk' \
             'build type: local trial branch GitHub Actions artifact; no Release created' \
+            'signature: ephemeral Actions trial key; not compatible with an existing install' \
             'UI: restored compact 2.2.0 video details/episode selector' \
             'XPath chapter cookies: same-site host/subdomain only (#2734)' \
             'ARM native set: validated v1.1.5/API21 libmpv + helper for arm64-v8a and armeabi-v7a' \
@@ -146,6 +152,7 @@ jobs:
             'analyze: flutter analyze --no-fatal-infos --fatal-warnings' \
             'ABI verification: arm64-v8a and armeabi-v7a entries present and hash-checked' \
             > build/trial/BUILD-MANIFEST.txt
+          rm -f build/trial/trial-signing.jks
 
       - name: Upload trial APK
         uses: actions/upload-artifact@v4
