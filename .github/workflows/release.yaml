@@ -1,6 +1,9 @@
 name: Kazumi 2.3.9 formal universal APK
 
 on:
+  push:
+    branches:
+      - codex/kazumi-2.3.9-legacy-hud
   workflow_dispatch:
 
 permissions:
@@ -41,7 +44,7 @@ jobs:
         run: flutter pub get
 
       - name: Run focused regression tests
-        run: flutter test test/rule_engine_test.dart test/video_source_format_test.dart
+        run: flutter test test/rule_engine_test.dart test/video_source_format_test.dart test/player_adjustment_hud_test.dart
 
       - name: Analyze Dart sources
         run: flutter analyze --no-fatal-infos --fatal-warnings
@@ -50,7 +53,7 @@ jobs:
         run: >-
           flutter build apk --release
           --build-name=2.3.9
-          --build-number=20309
+          --build-number=20310
           --dart-define=DANDANAPI_APPID=$DANDANAPI_APPID
           --dart-define=DANDANAPI_KEY=$DANDANAPI_KEY
 
@@ -109,7 +112,7 @@ jobs:
                       raise SystemExit(f'{name}: {actual} != {digest}')
           PY
           "$ANDROID_HOME/build-tools/34.0.0/aapt2" dump badging build/app/outputs/flutter-apk/app-release.apk | tee build/formal/badging-before-sign.txt
-          grep -q "package: name='com.predidit.kazumi' versionCode='20309' versionName='2.3.9'" build/formal/badging-before-sign.txt
+          grep -q "package: name='com.predidit.kazumi' versionCode='20310' versionName='2.3.9'" build/formal/badging-before-sign.txt
           grep -q "sdkVersion:'24'" build/formal/badging-before-sign.txt
           grep -q "targetSdkVersion:'36'" build/formal/badging-before-sign.txt
 
@@ -139,15 +142,16 @@ jobs:
         run: |
           sha256sum build/formal/Kazumi.apk | tee build/formal/SHA256SUMS.txt
           printf '%s\n' \
-            'source version: 2.3.9+20309' \
+            'source version: 2.3.9+20310' \
             'package: com.predidit.kazumi' \
             'artifact: Kazumi.apk' \
             'build type: GitHub Actions formal candidate; no Release mutation in this workflow' \
             'signature: fixed release key; compatible with the existing com.predidit.kazumi install' \
             'UI: restored compact 2.2.0 playback source tabs and source detail layout' \
+            'HUD: stateless legacy black54 text/icon overlays; no HUD animation, shadows or progress painters' \
             'XPath chapter cookies: same-site host/subdomain handling for issue 2734' \
             'ARM native set: validated self-built v1.1.5/API21 libmpv + helper for arm64-v8a and armeabi-v7a' \
-            'tests: focused rule-engine and video-source regression tests' \
+            'tests: focused rule-engine, video-source and legacy HUD widget regression tests' \
             'analyze: flutter analyze --no-fatal-infos --fatal-warnings' \
             'ABI verification: arm64-v8a and armeabi-v7a entries present and hash-checked' \
             > build/formal/BUILD-MANIFEST.txt
