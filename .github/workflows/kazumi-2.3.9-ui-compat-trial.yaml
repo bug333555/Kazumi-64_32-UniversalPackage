@@ -1,4 +1,4 @@
-name: Kazumi 2.3.9 UI compatibility trial
+name: Kazumi 2.3.9 formal universal APK
 
 on:
   push:
@@ -12,18 +12,16 @@ permissions:
 env:
   DANDANAPI_APPID: ${{ secrets.DANDANAPI_APPID }}
   DANDANAPI_KEY: ${{ secrets.DANDANAPI_KEY }}
-  KAZUMI_APPID: ${{ secrets.KAZUMI_APPID }}
-  KAZUMI_KEY: ${{ secrets.KAZUMI_KEY }}
 
 jobs:
-  trial-android:
-    name: Build signed universal ARM trial APK
+  android:
+    name: Build fixed-signature ARM universal APK
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
       - name: Clone repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install Android build dependencies
         run: |
@@ -31,7 +29,7 @@ jobs:
           sudo apt-get install -y clang cmake ninja-build libgtk-3-dev libayatana-appindicator3-dev libasound2-dev
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '17'
           distribution: temurin
@@ -58,10 +56,8 @@ jobs:
           --build-number=20309
           --dart-define=DANDANAPI_APPID=$DANDANAPI_APPID
           --dart-define=DANDANAPI_KEY=$DANDANAPI_KEY
-          --dart-define=KAZUMI_APPID=$KAZUMI_APPID
-          --dart-define=KAZUMI_KEY=$KAZUMI_KEY
 
-      - name: Replace ARM native libraries with validated v1.1.5/API21 set
+      - name: Replace ARM native libraries with validated self-built set
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -84,7 +80,7 @@ jobs:
           temp.replace(apk)
           PY
 
-      - name: Zipalign unsigned APK after native library replacement
+      - name: Zipalign unsigned APK
         run: |
           "$ANDROID_HOME/build-tools/34.0.0/zipalign" -f -p 4 \
             build/app/outputs/flutter-apk/app-release.apk \
@@ -92,9 +88,9 @@ jobs:
           mv build/app/outputs/flutter-apk/app-release-aligned.apk \
              build/app/outputs/flutter-apk/app-release.apk
 
-      - name: Verify universal APK contents
+      - name: Verify package and native library hashes before signing
         run: |
-          mkdir -p build/unsigned build/metadata
+          mkdir -p build/formal
           python3 - <<'PY'
           from pathlib import Path
           import hashlib, zipfile
@@ -114,49 +110,55 @@ jobs:
                   actual = hashlib.sha256(z.read(name)).hexdigest()
                   if actual != digest:
                       raise SystemExit(f'{name}: {actual} != {digest}')
-          print('ARM native library hashes verified')
           PY
-          cp build/app/outputs/flutter-apk/app-release.apk build/unsigned/Kazumi-2.3.9-ui-compat-trial-unsigned.apk
+          "$ANDROID_HOME/build-tools/34.0.0/aapt2" dump badging build/app/outputs/flutter-apk/app-release.apk | tee build/formal/badging-before-sign.txt
+          grep -q "package: name='com.predidit.kazumi' versionCode='20309' versionName='2.3.9'" build/formal/badging-before-sign.txt
+          grep -q "sdkVersion:'24'" build/formal/badging-before-sign.txt
+          grep -q "targetSdkVersion:'36'" build/formal/badging-before-sign.txt
 
-      - name: Sign trial APK with ephemeral test key
+      - name: Sign with the fixed release key
+        env:
+          KAZUMI_KEYSTORE_BASE64: ${{ secrets.KAZUMI_KEYSTORE_BASE64 }}
+          KAZUMI_KEYSTORE_PASSWORD: ${{ secrets.KAZUMI_KEYSTORE_PASSWORD }}
+          KAZUMI_KEY_ALIAS: ${{ secrets.KAZUMI_KEY_ALIAS }}
+          KAZUMI_KEY_PASSWORD: ${{ secrets.KAZUMI_KEY_PASSWORD }}
         run: |
-          mkdir -p build/trial
-          keytool -genkeypair -v \
-            -keystore build/trial/trial-signing.jks \
-            -storepass android -keypass android \
-            -alias kazumi-trial \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -dname 'CN=Kazumi UI trial, O=bug333555, C=CN'
+          test -n "$KAZUMI_KEYSTORE_BASE64"
+          test -n "$KAZUMI_KEYSTORE_PASSWORD"
+          test -n "$KAZUMI_KEY_ALIAS"
+          test -n "$KAZUMI_KEY_PASSWORD"
+          echo "$KAZUMI_KEYSTORE_BASE64" | base64 -d > build/formal/kazumi-release.jks
           "$ANDROID_HOME/build-tools/34.0.0/apksigner" sign \
-            --ks build/trial/trial-signing.jks \
-            --ks-key-alias kazumi-trial \
-            --ks-pass pass:android --key-pass pass:android \
-            --out build/trial/Kazumi-2.3.9-ui-compat-trial.apk \
-            build/unsigned/Kazumi-2.3.9-ui-compat-trial-unsigned.apk
-          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose \
-            --print-certs build/trial/Kazumi-2.3.9-ui-compat-trial.apk
+            --ks build/formal/kazumi-release.jks \
+            --ks-pass "pass:$KAZUMI_KEYSTORE_PASSWORD" \
+            --ks-key-alias "$KAZUMI_KEY_ALIAS" \
+            --key-pass "pass:$KAZUMI_KEY_PASSWORD" \
+            --out build/formal/Kazumi.apk \
+            build/app/outputs/flutter-apk/app-release.apk
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose --print-certs build/formal/Kazumi.apk | tee build/formal/signature.txt
+          grep -qi "fece83f953fbe954298fee2201b63962266c377dbfa305a83058a48a9a255ad7" build/formal/signature.txt
 
-      - name: Prepare trial artifact and manifest
+      - name: Prepare formal artifact manifest
         run: |
-          sha256sum build/trial/Kazumi-2.3.9-ui-compat-trial.apk > build/trial/SHA256SUMS.txt
+          sha256sum build/formal/Kazumi.apk | tee build/formal/SHA256SUMS.txt
           printf '%s\n' \
             'source version: 2.3.9+20309' \
             'package: com.predidit.kazumi' \
-            'artifact: Kazumi-2.3.9-ui-compat-trial.apk' \
-            'build type: local trial branch GitHub Actions artifact; no Release created' \
-            'signature: ephemeral Actions trial key; not compatible with an existing install' \
-            'UI: restored compact 2.2.0 playback source tabs and video details/episode selector' \
-            'XPath chapter cookies: same-site host/subdomain only (#2734)' \
-            'ARM native set: validated v1.1.5/API21 libmpv + helper for arm64-v8a and armeabi-v7a' \
-            'test: flutter test test/rule_engine_test.dart test/video_source_format_test.dart' \
+            'artifact: Kazumi.apk' \
+            'build type: GitHub Actions formal candidate; no Release mutation in this workflow' \
+            'signature: fixed release key; compatible with the existing com.predidit.kazumi install' \
+            'UI: restored compact 2.2.0 playback source tabs and source detail layout' \
+            'XPath chapter cookies: same-site host/subdomain handling for issue 2734' \
+            'ARM native set: validated self-built v1.1.5/API21 libmpv + helper for arm64-v8a and armeabi-v7a' \
+            'tests: focused rule-engine and video-source regression tests' \
             'analyze: flutter analyze --no-fatal-infos --fatal-warnings' \
             'ABI verification: arm64-v8a and armeabi-v7a entries present and hash-checked' \
-            > build/trial/BUILD-MANIFEST.txt
-          rm -f build/trial/trial-signing.jks
+            > build/formal/BUILD-MANIFEST.txt
+          rm -f build/formal/kazumi-release.jks
 
-      - name: Upload trial APK
-        uses: actions/upload-artifact@v4
+      - name: Upload formal candidate artifact
+        uses: actions/upload-artifact@v7
         with:
-          name: kazumi-2.3.9-ui-compat-trial
-          path: build/trial
+          name: kazumi-2.3.9-formal-universal
+          path: build/formal
           if-no-files-found: error
