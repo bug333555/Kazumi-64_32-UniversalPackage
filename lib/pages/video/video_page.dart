@@ -5,6 +5,7 @@ import 'package:flutter_modular/flutter_modular.dart';
 import 'package:kazumi/pages/player/player_controller.dart';
 import 'package:kazumi/pages/video/video_controller.dart';
 import 'package:kazumi/pages/video/video_playback_args.dart';
+import 'package:kazumi/pages/video/video_system_bars.dart';
 import 'package:kazumi/pages/history/history_controller.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/pages/player/player_item.dart';
@@ -642,49 +643,53 @@ class _VideoPageState extends State<VideoPage>
           }
           return Observer(
             builder: (context) {
-              return Scaffold(
-                appBar: null,
-                body: SafeArea(
-                  top: !videoPageController.isFullscreen,
-                  // set iOS and Android navigation bar to immersive
-                  bottom: false,
-                  left: !videoPageController.isFullscreen,
-                  right: !videoPageController.isFullscreen,
-                  child: Stack(
-                    alignment: Alignment.centerRight,
-                    children: [
-                      Column(
-                        children: [
-                          Flexible(
-                            flex: isLandscape ? 1 : 0,
-                            child: Container(
-                              color: Colors.black,
-                              height: isLandscape
-                                  ? MediaQuery.sizeOf(context).height
-                                  : MediaQuery.sizeOf(context).width * 9 / 16,
-                              width: MediaQuery.sizeOf(context).width,
-                              child: playerBody,
+              return VideoSystemBars(
+                fullscreen: videoPageController.isFullscreen,
+                isPip: videoPageController.isPip,
+                child: Scaffold(
+                  appBar: null,
+                  body: SafeArea(
+                    top: !videoPageController.isFullscreen,
+                    // set iOS and Android navigation bar to immersive
+                    bottom: false,
+                    left: !videoPageController.isFullscreen,
+                    right: !videoPageController.isFullscreen,
+                    child: Stack(
+                      alignment: Alignment.centerRight,
+                      children: [
+                        Column(
+                          children: [
+                            Flexible(
+                              flex: isLandscape ? 1 : 0,
+                              child: Container(
+                                color: Colors.black,
+                                height: isLandscape
+                                    ? MediaQuery.sizeOf(context).height
+                                    : MediaQuery.sizeOf(context).width * 9 / 16,
+                                width: MediaQuery.sizeOf(context).width,
+                                child: playerBody,
+                              ),
                             ),
-                          ),
-                          if (!isLandscape) Expanded(child: tabBody),
-                        ],
-                      ),
-                      if (isLandscape && videoPageController.showTabBody) ...[
-                        if (disableAnimations) ...[
-                          sideTabMask,
-                          sideTabBody,
-                        ] else ...[
-                          FadeTransition(
-                            opacity: _maskOpacityAnimation,
-                            child: sideTabMask,
-                          ),
-                          SlideTransition(
-                            position: _rightOffsetAnimation,
-                            child: sideTabBody,
-                          ),
+                            if (!isLandscape) Expanded(child: tabBody),
+                          ],
+                        ),
+                        if (isLandscape && videoPageController.showTabBody) ...[
+                          if (disableAnimations) ...[
+                            sideTabMask,
+                            sideTabBody,
+                          ] else ...[
+                            FadeTransition(
+                              opacity: _maskOpacityAnimation,
+                              child: sideTabMask,
+                            ),
+                            SlideTransition(
+                              position: _rightOffsetAnimation,
+                              child: sideTabBody,
+                            ),
+                          ],
                         ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
               );
